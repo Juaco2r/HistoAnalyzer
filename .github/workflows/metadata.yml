@@ -1,0 +1,28 @@
+name: Validate release metadata
+
+on:
+  push:
+    paths:
+      - .zenodo.json
+      - CITATION.cff
+      - codemeta.json
+  pull_request:
+    paths:
+      - .zenodo.json
+      - CITATION.cff
+      - codemeta.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate JSON and CFF syntax
+        run: |
+          python -m json.tool .zenodo.json >/dev/null
+          python -m json.tool codemeta.json >/dev/null
+          python -m pip install cffconvert
+          cffconvert --validate

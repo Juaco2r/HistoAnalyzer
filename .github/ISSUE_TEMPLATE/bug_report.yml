@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible problem in HistoAnalyzer
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: HistoAnalyzer version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Workflow
+      options: [Baseline, Train, Predict, Train then predict]
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant log output
+      render: shell
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Data safety
+      options:
+        - label: I removed patient identifiers and confidential paths from the report.
+          required: true

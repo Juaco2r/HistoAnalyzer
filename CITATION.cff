@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use HistoAnalyzer, please cite this software and the InstanSeg publication listed in the documentation."
+title: "HistoAnalyzer: Cross-platform H-DAB histology analysis"
+type: software
+authors:
+  - family-names: "Rodríguez-Rojas"
+    given-names: "José"
+    orcid: "https://orcid.org/0000-0003-4373-5480"
+version: "1.0.0"
+date-released: "2026-07-16"
+repository-code: "https://github.com/Juaco2r/HistoAnalyzer"
+url: "https://github.com/Juaco2r/HistoAnalyzer"
+license: MIT
+keywords:
+  - digital pathology
+  - H-DAB
+  - InstanSeg
+  - nuclei segmentation
+  - tumor stroma
+  - QuPath pixel classifier

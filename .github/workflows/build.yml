@@ -1,0 +1,73 @@
+name: Build desktop applications
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: HistoAnalyzer-Windows-x64
+            script: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+            path: release/HistoAnalyzer-Windows-x64.zip
+          - os: macos-14
+            artifact: HistoAnalyzer-macOS
+            script: bash scripts/build_macos.sh
+            path: release/HistoAnalyzer-macOS.zip
+          - os: ubuntu-22.04
+            artifact: HistoAnalyzer-Linux-x64
+            script: bash scripts/build_linux.sh
+            path: release/HistoAnalyzer-Linux-x64.tar.gz
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-xinerama0 libopenslide0
+      - name: Build
+        shell: bash
+        if: runner.os != 'Windows'
+        run: ${{ matrix.script }}
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "HistoAnalyzer $TAG" --generate-notes
+          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.exe' \) -print0 | xargs -0 -r gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber

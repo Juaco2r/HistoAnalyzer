@@ -1,0 +1,21 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "HistoAnalyzer",
+  "version": "1.0.0",
+  "description": "Cross-platform H-DAB histology analysis with InstanSeg and classical compartment classification.",
+  "codeRepository": "https://github.com/Juaco2r/HistoAnalyzer",
+  "license": "https://spdx.org/licenses/MIT",
+  "dateCreated": "2026-07-16",
+  "programmingLanguage": "Python",
+  "operatingSystem": ["Windows", "macOS", "Linux"],
+  "author": {
+    "@type": "Person",
+    "givenName": "José",
+    "familyName": "Rodríguez-Rojas",
+    "@id": "https://orcid.org/0000-0003-4373-5480",
+    "affiliation": "University of Barcelona"
+  },
+  "applicationCategory": "Scientific software",
+  "keywords": ["digital pathology", "H-DAB", "InstanSeg", "tumor stroma", "nuclei segmentation"]
+}

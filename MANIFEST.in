@@ -1,0 +1,5 @@
+include README.md LICENSE CITATION.cff .zenodo.json codemeta.json
+recursive-include src/histoanalyzer/assets *
+recursive-include docs *.md
+recursive-include scripts *
+recursive-include build *

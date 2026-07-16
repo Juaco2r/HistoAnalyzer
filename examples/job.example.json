@@ -1,0 +1,14 @@
+{
+  "mode": "baseline",
+  "images": ["/path/to/example.tif"],
+  "output_root": "/path/to/HistoAnalyzer_results",
+  "tissue_classifier": "/path/to/TissueClassifier.json",
+  "anthra_classifier": "/path/to/AnthracosisClassifier.json",
+  "dab_classifier": "/path/to/DABThreshold.json",
+  "ink_dilation": 5,
+  "nuclei_backend": "instanseg",
+  "instanseg_model": "brightfield_nuclei",
+  "instanseg_input": "rgb",
+  "instanseg_device": "auto",
+  "pixel_size_fallback_um": 0.5
+}
