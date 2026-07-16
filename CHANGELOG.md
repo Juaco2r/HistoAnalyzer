@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.9 - 2026-07-16
+
+- Store downloaded InstanSeg models in a writable per-user cache instead of beside the installed package.
+- Windows default: `%LOCALAPPDATA%\HistoAnalyzer\models\instanseg\bioimageio_models`.
+- Correctly report whether nuclei were segmented by InstanSeg or watershed fallback.
+- Record the fallback reason and model cache directory in `nuclei_validation_summary.csv`.
+- Suppress IPython preview attempts in frozen desktop builds.
+
 ## 1.0.8 - 2026-07-16
 
 ### Fixed

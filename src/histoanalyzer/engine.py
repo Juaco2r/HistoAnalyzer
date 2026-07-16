@@ -28,7 +28,9 @@ prediction, and H-DAB stain-2 thresholding.
 Research-use software. Validate representative regions against the original
 QuPath classifier before using results for a complete study.
 
-Version 2.4.0 adds the public InstanSeg brightfield_nuclei model as the
+Version 2.6.0 stores downloaded InstanSeg models in a writable per-user cache,
+reports the actual backend used after fallback, and suppresses IPython-only display
+in frozen GUI builds. The public InstanSeg brightfield_nuclei model remains the
 preferred nuclei backend, with RGB input, automatic CPU/CUDA selection,
 pixel-size-aware inference, and watershed fallback. It retains unique per-run
 temporary folders to avoid Windows/OneDrive WinError 5 folder-lock failures.
@@ -42,6 +44,7 @@ import gc
 import json
 import math
 import os
+import platform
 import shutil
 import sys
 import tempfile
@@ -71,8 +74,8 @@ except Exception:
 
 
 APP_NAME = "Standalone H-DAB Nuclei Compartment Pipeline"
-APP_VERSION = "2.5.0"
-BUILD_ID = "2026-07-16-BUNDLED-CLASSIFIERS-A"
+APP_VERSION = "2.6.0"
+BUILD_ID = "2026-07-16-INSTANSEG-USER-CACHE-A"
 
 _BUNDLED_CLASSIFIERS = bundled_classifier_paths()
 DEFAULT_BASE = Path.cwd()
@@ -1703,7 +1706,52 @@ class NucleiBackendConfig:
         return cls(**known)
 
 
+def histoanalyzer_user_cache_dir() -> Path:
+    """Return a writable per-user cache directory for downloaded model files."""
+    override = os.environ.get("HISTOANALYZER_CACHE_DIR")
+    if override:
+        base = Path(override).expanduser()
+    else:
+        system = platform.system().lower()
+        if system == "windows":
+            base = Path(
+                os.environ.get("LOCALAPPDATA")
+                or os.environ.get("APPDATA")
+                or (Path.home() / "AppData" / "Local")
+            ) / "HistoAnalyzer"
+        elif system == "darwin":
+            base = Path.home() / "Library" / "Caches" / "HistoAnalyzer"
+        else:
+            base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "HistoAnalyzer"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def configure_instanseg_model_cache() -> Path:
+    """Force InstanSeg downloads into a writable user cache.
+
+    InstanSeg otherwise defaults to a directory beside its installed package.
+    That location is read-only for applications installed under Program Files.
+    An explicit INSTANSEG_BIOIMAGEIO_PATH still takes precedence.
+    """
+    existing = os.environ.get("INSTANSEG_BIOIMAGEIO_PATH")
+    cache = Path(existing).expanduser() if existing else (
+        histoanalyzer_user_cache_dir() / "models" / "instanseg" / "bioimageio_models"
+    )
+    cache.mkdir(parents=True, exist_ok=True)
+    # Validate writability before InstanSeg starts a potentially large download.
+    probe = cache / ".histoanalyzer_write_test"
+    try:
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except Exception as exc:
+        raise PermissionError(f"InstanSeg model cache is not writable: {cache}: {exc}") from exc
+    os.environ["INSTANSEG_BIOIMAGEIO_PATH"] = str(cache)
+    return cache
+
+
 def require_instanseg() -> Any:
+    cache = configure_instanseg_model_cache()
     try:
         from instanseg import InstanSeg  # type: ignore
     except Exception as exc:
@@ -1712,6 +1760,7 @@ def require_instanseg() -> Any:
             "Install it in the same environment used by Spyder with:\n"
             "  py -m pip install instanseg-torch\n"
             "For NVIDIA CUDA, install a CUDA-enabled PyTorch build first if needed.\n"
+            f"Model cache: {cache}\n"
             f"Original import error: {exc}"
         ) from exc
     return InstanSeg
@@ -1788,15 +1837,20 @@ class NucleiSegmenter:
         self._warned_fallback = False
         self._reported_instanseg_settings = False
         self.last_raw_labels: Optional[np.ndarray] = None
+        self.last_backend_used: Optional[str] = None
+        self.last_fallback_reason: Optional[str] = None
+        self.model_cache_dir: Optional[Path] = None
 
     def _load_model(self) -> Any:
         if self._model is None:
+            self.model_cache_dir = configure_instanseg_model_cache()
             InstanSeg = require_instanseg()
             device = None if str(self.config.device).lower() in ("", "auto", "none") else self.config.device
             log(
                 f"Loading InstanSeg model '{self.config.instanseg_model}' "
                 f"(device={self.config.device}, input={self.config.instanseg_input})..."
             )
+            log(f"InstanSeg model cache: {self.model_cache_dir}")
             self._model = InstanSeg(
                 self.config.instanseg_model,
                 device=device,
@@ -1928,24 +1982,35 @@ class NucleiSegmenter:
     ) -> Tuple[np.ndarray, List[Any]]:
         backend = str(self.config.backend).lower()
         if backend == "watershed":
-            return segment_nuclei_h_channel(
+            self.last_backend_used = "watershed"
+            self.last_fallback_reason = None
+            labels, props = segment_nuclei_h_channel(
                 h_channel, valid_mask, threshold, min_area_px, max_area_px, min_distance_px
             )
+            self.last_raw_labels = labels.copy()
+            return labels, props
         if backend != "instanseg":
             raise ValueError(f"Unsupported nuclei backend: {self.config.backend}")
         try:
-            return self._segment_instanseg(
+            labels, props = self._segment_instanseg(
                 rgb, h_channel, valid_mask, source_mpp, min_area_px, max_area_px
             )
+            self.last_backend_used = "instanseg"
+            self.last_fallback_reason = None
+            return labels, props
         except Exception as exc:
             if not self.config.fallback_watershed:
                 raise
+            self.last_backend_used = "watershed"
+            self.last_fallback_reason = str(exc)
             if not self._warned_fallback:
                 log(f"WARNING: InstanSeg failed; using watershed fallback. Reason: {exc}")
                 self._warned_fallback = True
-            return segment_nuclei_h_channel(
+            labels, props = segment_nuclei_h_channel(
                 h_channel, valid_mask, threshold, min_area_px, max_area_px, min_distance_px
             )
+            self.last_raw_labels = labels.copy()
+            return labels, props
 
 
 def _hematoxylin_values(classifier: DABThresholdClassifier, rgb: np.ndarray) -> np.ndarray:
@@ -2941,7 +3006,7 @@ def save_nuclei_validation_tile(
             [
                 np.concatenate([label_panel(rgb, "1. Original RGB"), label_panel(h_rgb, "2. Hematoxylin channel")], axis=1),
                 np.concatenate([
-                    label_panel(raw_overlay, "3. Raw InstanSeg output (red)"),
+                    label_panel(raw_overlay, f"3. Raw {nuclei_segmenter.last_backend_used or nuclei_segmenter.config.backend} output (red)"),
                     label_panel(overlay, "4. Retained by CleanTissue centroid (yellow)"),
                 ], axis=1),
             ],
@@ -2951,12 +3016,12 @@ def save_nuclei_validation_tile(
     tifffile.imwrite(
         output_dir / "nuclei_validation_raw_model_labels.tif",
         raw_labels.astype(np.int32),
-        metadata={"axes": "YX", "backend": nuclei_segmenter.config.backend, "stage": "raw_model"},
+        metadata={"axes": "YX", "backend": nuclei_segmenter.last_backend_used or nuclei_segmenter.config.backend, "stage": "raw_model"},
     )
     tifffile.imwrite(
         output_dir / "nuclei_validation_labels.tif",
         labels.astype(np.int32),
-        metadata={"axes": "YX", "backend": nuclei_segmenter.config.backend, "stage": "clean_tissue_centroid_filter"},
+        metadata={"axes": "YX", "backend": nuclei_segmenter.last_backend_used or nuclei_segmenter.config.backend, "stage": "clean_tissue_centroid_filter"},
     )
     areas = np.asarray([float(prop.area) for prop in props], dtype=np.float64)
     pixel_area_um2 = float(mpp*mpp) if mpp else 1.0
@@ -2965,7 +3030,10 @@ def save_nuclei_validation_tile(
         "saved": True,
         "x": int(x), "y": int(y), "width": int(ww), "height": int(hh),
         "clean_fraction": float(np.mean(valid)),
-        "backend": nuclei_segmenter.config.backend,
+        "backend": nuclei_segmenter.last_backend_used or nuclei_segmenter.config.backend,
+        "configured_backend": nuclei_segmenter.config.backend,
+        "fallback_reason": nuclei_segmenter.last_fallback_reason or "",
+        "model_cache_dir": str(nuclei_segmenter.model_cache_dir or ""),
         "instanseg_model": nuclei_segmenter.config.instanseg_model,
         "instanseg_input": nuclei_segmenter.config.instanseg_input,
         "instanseg_min_area_px": int(nuclei_segmenter.config.instanseg_min_area_px),
@@ -2987,12 +3055,15 @@ def save_nuclei_validation_tile(
 
 
 def display_saved_images_inline(paths: Sequence[Path]) -> None:
-    """Display saved PNGs in Spyder/IPython while keeping disk outputs authoritative."""
-    if Image is None:
+    """Display saved PNGs only in an interactive IPython/Spyder session."""
+    if Image is None or getattr(sys, "frozen", False):
         return
     try:
         from IPython import get_ipython  # type: ignore
         from IPython.display import display  # type: ignore
+    except ImportError:
+        return
+    try:
         if get_ipython() is None:
             return
         for path in paths:

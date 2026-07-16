@@ -34,6 +34,7 @@ def common_cli(config: JobConfig, image: str, output: str) -> List[str]:
         "--geojson-tile-size", str(config.geojson_tile_size),
         "--geojson-min-area", str(config.geojson_min_area),
         "--geojson-simplify", str(config.geojson_simplify),
+        "--no-inline-preview",
     ]
     if config.tile_size:
         args += ["--tile-size", str(config.tile_size)]
