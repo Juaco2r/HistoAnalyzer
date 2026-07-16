@@ -32,6 +32,15 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Validate checkout layout
+        run: python scripts/validate_build_layout.py
+      - name: Show build paths
+        shell: bash
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          pwd
+          ls -la
+          ls -la build src/histoanalyzer
       - name: Linux system libraries
         if: runner.os == 'Linux'
         run: |

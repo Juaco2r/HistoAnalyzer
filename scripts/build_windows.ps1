@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
+python scripts/validate_build_layout.py
 python -m pip install --upgrade pip
 python -m pip install -r requirements-build.txt
 python scripts/make_icons.py

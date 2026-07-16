@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+python scripts/validate_build_layout.py
 python -m pip install --upgrade pip
 python -m pip install -r requirements-build.txt
 python scripts/make_icons.py

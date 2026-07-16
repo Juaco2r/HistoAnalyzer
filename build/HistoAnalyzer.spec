@@ -4,10 +4,26 @@ import platform
 
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
-ROOT = Path(SPECPATH).parent.parent
+# PyInstaller defines SPECPATH as the directory containing this spec file.
+# GitHub Actions checks repositories out into .../<repo>/<repo>, so moving up
+# two directories points outside the checkout. Resolve the project root from
+# the spec directory itself and verify it before Analysis starts.
+_spec_path = Path(SPECPATH).resolve()
+SPEC_DIR = _spec_path if _spec_path.is_dir() else _spec_path.parent
+ROOT = SPEC_DIR.parent
 SRC = ROOT / "src"
 ASSETS = ROOT / "assets"
-ENTRY = SRC / "histoanalyzer" / "__main__.py"
+ENTRY = ROOT / "run_histoanalyzer.py"
+
+for required in (ROOT / "pyproject.toml", ENTRY, SRC / "histoanalyzer" / "__main__.py"):
+    if not required.is_file():
+        raise FileNotFoundError(
+            f"Required build input not found: {required}\n"
+            f"SPECPATH={SPECPATH!r}\nResolved project root={ROOT}"
+        )
+
+print(f"HistoAnalyzer build root: {ROOT}")
+print(f"HistoAnalyzer entry point: {ENTRY}")
 
 packages = [
     "PySide6", "numpy", "cv2", "tifffile", "zarr", "PIL", "scipy", "skimage",
@@ -23,7 +39,8 @@ datas = [
 ]
 binaries = []
 hiddenimports = [
-    "histoanalyzer.worker", "histoanalyzer.engine", "histoanalyzer.gui.main_window",
+    "histoanalyzer", "histoanalyzer.__main__", "histoanalyzer.worker",
+    "histoanalyzer.engine", "histoanalyzer.gui.main_window",
     "sklearn.ensemble._forest", "sklearn.tree._tree", "sklearn.utils._cython_blas",
     "torch._C", "torchvision", "zarr.storage", "numcodecs",
 ]
@@ -34,20 +51,26 @@ for package in packages:
         datas += pkg_datas
         binaries += pkg_binaries
         hiddenimports += pkg_hidden
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"Optional PyInstaller collection skipped for {package}: {exc}")
 
-for package in ["histoanalyzer", "instanseg-torch", "PySide6", "torch", "scikit-learn"]:
+for package in ["HistoAnalyzer", "instanseg-torch", "PySide6", "torch", "scikit-learn"]:
     try:
         datas += copy_metadata(package)
     except Exception:
         pass
 
-icon = ASSETS / ("icon.ico" if platform.system() == "Windows" else "icon.icns" if (ASSETS / "icon.icns").exists() else "icon.png")
+icon = ASSETS / (
+    "icon.ico"
+    if platform.system() == "Windows"
+    else "icon.icns"
+    if (ASSETS / "icon.icns").exists()
+    else "icon.png"
+)
 
 a = Analysis(
     [str(ENTRY)],
-    pathex=[str(SRC)],
+    pathex=[str(SRC), str(ROOT)],
     binaries=binaries,
     datas=datas,
     hiddenimports=sorted(set(hiddenimports)),
@@ -99,8 +122,8 @@ if platform.system() == "Darwin":
         info_plist={
             "CFBundleName": "HistoAnalyzer",
             "CFBundleDisplayName": "HistoAnalyzer",
-            "CFBundleShortVersionString": "1.0.0",
-            "CFBundleVersion": "1.0.0",
+            "CFBundleShortVersionString": "1.0.1",
+            "CFBundleVersion": "1.0.1",
             "NSHighResolutionCapable": True,
         },
     )
