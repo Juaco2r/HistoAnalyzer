@@ -33,10 +33,27 @@ packages = [
     "matplotlib", "requests", "tqdm",
 ]
 
+PACKAGE_CLASSIFIERS = SRC / "histoanalyzer" / "resources" / "classifiers"
+ROOT_CLASSIFIERS = ROOT / "classifiers"
+CLASSIFIER_SOURCE = (
+    PACKAGE_CLASSIFIERS
+    if PACKAGE_CLASSIFIERS.is_dir()
+    else ROOT_CLASSIFIERS
+    if ROOT_CLASSIFIERS.is_dir()
+    else None
+)
+if CLASSIFIER_SOURCE is None:
+    raise FileNotFoundError(
+        "Bundled classifier directory not found. Checked:\n"
+        f"  - {PACKAGE_CLASSIFIERS}\n"
+        f"  - {ROOT_CLASSIFIERS}"
+    )
+print(f"Bundled classifier source: {CLASSIFIER_SOURCE}")
+
 datas = [
     (str(ASSETS / "icon.png"), "assets"),
     (str(ASSETS / "icon.ico"), "assets"),
-    (str(SRC / "histoanalyzer" / "resources" / "classifiers"), "histoanalyzer/resources/classifiers"),
+    (str(CLASSIFIER_SOURCE), "histoanalyzer/resources/classifiers"),
     (str(ROOT / "LICENSE"), "."),
     (str(ROOT / "THIRD_PARTY_NOTICES.md"), "."),
 ]
@@ -126,8 +143,8 @@ if platform.system() == "Darwin":
         info_plist={
             "CFBundleName": "HistoAnalyzer",
             "CFBundleDisplayName": "HistoAnalyzer",
-            "CFBundleShortVersionString": "1.0.5",
-            "CFBundleVersion": "1.0.5",
+            "CFBundleShortVersionString": "1.0.6",
+            "CFBundleVersion": "1.0.6",
             "NSHighResolutionCapable": True,
         },
     )

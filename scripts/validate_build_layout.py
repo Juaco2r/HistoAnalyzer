@@ -15,6 +15,20 @@ REQUIRED = (
     ROOT / "src" / "histoanalyzer" / "gui" / "main_window.py",
 )
 
+
+CLASSIFIER_NAMES = (
+    "TissueClassifierANNFullJuly06.json",
+    "AnthraJuly06.json",
+    "DABCNNThreshold0.17DAB.json",
+)
+ROOT_CLASSIFIERS = ROOT / "classifiers"
+PACKAGE_CLASSIFIERS = ROOT / "src" / "histoanalyzer" / "resources" / "classifiers"
+for directory in (ROOT_CLASSIFIERS, PACKAGE_CLASSIFIERS):
+    missing_classifiers = [directory / name for name in CLASSIFIER_NAMES if not (directory / name).is_file()]
+    if missing_classifiers:
+        formatted = "\n".join(f"  - {path}" for path in missing_classifiers)
+        raise SystemExit(f"Bundled classifier validation failed. Missing:\n{formatted}")
+
 missing = [path for path in REQUIRED if not path.is_file()]
 if missing:
     formatted = "\n".join(f"  - {path}" for path in missing)

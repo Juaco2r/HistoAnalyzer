@@ -1,6 +1,14 @@
 # Changelog
 
-## 1.0.5 — 2026-07-16
+## 1.0.6 — 2026-07-16
+
+- Fixed Windows, macOS and Linux PyInstaller failures caused by a missing `src/histoanalyzer/resources/classifiers` directory.
+- Added the three bundled classifier JSON files to the installable package source tree.
+- Added `scripts/sync_bundled_classifiers.py` and run it before every native build.
+- Made the PyInstaller spec fall back to the repository-level `classifiers/` directory when needed.
+- Added build validation and regression tests for classifier resource synchronization.
+
+## 1.0.6 — 2026-07-16
 
 - Fixed Windows CI failure caused by PowerShell treating pip warnings for absent OpenCV packages as terminating errors.
 - The Windows build now queries installed distributions and uninstalls only OpenCV variants that are actually present.

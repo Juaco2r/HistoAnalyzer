@@ -15,6 +15,7 @@ function Invoke-PythonChecked {
     }
 }
 
+Invoke-PythonChecked -Arguments @("scripts/sync_bundled_classifiers.py") -Description "Bundled classifier synchronization"
 Invoke-PythonChecked -Arguments @("scripts/validate_build_layout.py") -Description "Build layout validation"
 Invoke-PythonChecked -Arguments @("-m", "pip", "install", "--upgrade", "pip") -Description "pip upgrade"
 Invoke-PythonChecked -Arguments @("-m", "pip", "install", "-r", "requirements-build.txt") -Description "Build dependency installation"

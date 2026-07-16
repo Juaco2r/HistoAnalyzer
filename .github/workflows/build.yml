@@ -15,7 +15,9 @@ jobs:
           - os: windows-latest
             artifact: HistoAnalyzer-Windows-x64
             script: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
-            path: release/HistoAnalyzer-Windows-x64.zip
+            path: |
+              release/HistoAnalyzer-Windows-x64-Setup.exe
+              release/HistoAnalyzer-Windows-x64-PORTABLE-EXTRACT-FIRST.zip
           - os: macos-14
             artifact: HistoAnalyzer-macOS
             script: bash scripts/build_macos.sh
@@ -32,6 +34,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Synchronize bundled classifiers
+        run: python scripts/sync_bundled_classifiers.py
       - name: Validate checkout layout
         run: python scripts/validate_build_layout.py
       - name: Show build paths
@@ -40,7 +44,7 @@ jobs:
           echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
           pwd
           ls -la
-          ls -la build src/histoanalyzer
+          ls -la build src/histoanalyzer classifiers src/histoanalyzer/resources/classifiers
       - name: Linux system libraries
         if: runner.os == 'Linux'
         run: |
@@ -50,6 +54,10 @@ jobs:
         shell: bash
         if: runner.os != 'Windows'
         run: ${{ matrix.script }}
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
       - name: Build Windows
         if: runner.os == 'Windows'
         shell: pwsh
