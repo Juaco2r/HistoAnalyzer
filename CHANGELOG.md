@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8 - 2026-07-16
+
+### Fixed
+
+- Fixed the Windows installer step when `Get-Command iscc.exe` returns multiple matches.
+- Resolved one absolute Inno Setup compiler path before using PowerShell's call operator.
+- Resolved the installer specification to an absolute path and added build diagnostics.
+- Added regression tests for the Windows Inno Setup invocation contract.
+
 ## 1.0.7 — 2026-07-16
 
 - Fixed the Windows job failing after a successful PyInstaller build because `docs/WINDOWS_PORTABLE_README.txt` could not be copied.

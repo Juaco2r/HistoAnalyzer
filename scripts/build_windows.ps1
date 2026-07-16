@@ -143,25 +143,48 @@ Compress-Archive -Path "$PortableStage/*" -DestinationPath $PortableZip -Compres
 Write-Host "Portable build: $PortableZip"
 
 # Installer release (preferred for end users).
-$iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
-if (-not $iscc) {
-    $candidates = @(
-        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-        "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-    )
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            $iscc = Get-Item $candidate
+# Get-Command can return more than one ISCC.exe (for example, a Chocolatey shim
+# plus the real executable). Resolve exactly one absolute command path before
+# using PowerShell's call operator; passing an array to '&' is invalid.
+$IsccPath = $null
+$IsccCommand = @(
+    Get-Command "iscc.exe" -CommandType Application -ErrorAction SilentlyContinue
+) | Select-Object -First 1
+
+if ($IsccCommand) {
+    foreach ($PropertyName in @("Source", "Path", "Definition")) {
+        $CandidateValue = $IsccCommand.$PropertyName
+        if ($CandidateValue -and (Test-Path -LiteralPath ([string]$CandidateValue))) {
+            $IsccPath = (Resolve-Path -LiteralPath ([string]$CandidateValue)).Path
             break
         }
     }
 }
-if (-not $iscc) {
+
+if (-not $IsccPath) {
+    $IsccCandidates = @(
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+        "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+    )
+    foreach ($Candidate in $IsccCandidates) {
+        if ($Candidate -and (Test-Path -LiteralPath $Candidate)) {
+            $IsccPath = (Resolve-Path -LiteralPath $Candidate).Path
+            break
+        }
+    }
+}
+
+if (-not $IsccPath) {
     throw "Inno Setup 6 (ISCC.exe) was not found. Install it before building the Windows installer."
 }
-& $iscc.FullName "build/windows_installer.iss"
-if ($LASTEXITCODE -ne 0) {
-    throw "Inno Setup failed with exit code $LASTEXITCODE."
+
+$InstallerScript = (Resolve-Path -LiteralPath (Join-Path $Root "build/windows_installer.iss")).Path
+Write-Host "Inno Setup compiler: $IsccPath"
+Write-Host "Inno Setup script: $InstallerScript"
+& $IsccPath $InstallerScript
+$InnoExitCode = $LASTEXITCODE
+if ($InnoExitCode -ne 0) {
+    throw "Inno Setup failed with exit code $InnoExitCode."
 }
 $Installer = Join-Path $Root "release/HistoAnalyzer-Windows-x64-Setup.exe"
 if (-not (Test-Path $Installer)) {
