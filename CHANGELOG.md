@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.4 — 2026-07-16
+
+- Bundle the validated Tissue, Anthracosis and H-DAB threshold JSON classifiers.
+- Use bundled classifiers automatically in the GUI, worker jobs, CLI and frozen applications.
+- Add **Use bundled defaults** to restore the included classifier set.
+- Include classifier resources in wheels, source distributions and PyInstaller builds.
+
+## 1.0.2 — 2026-07-16
+
+- Makes the Windows Inno Setup installer the preferred release artifact.
+- Renames the portable archive to `PORTABLE-EXTRACT-FIRST`.
+- Adds a visible `README_FIRST.txt` with extraction instructions.
+- Verifies `HistoAnalyzer.exe` and `_internal/python311.dll` before packaging.
+- Installs Inno Setup explicitly on the Windows GitHub Actions runner.
+- Uploads both the Windows installer and portable archive.
+
+
 ## 1.0.1 — 2026-07-16
 
 - Fixed the PyInstaller project-root resolution used by GitHub Actions.

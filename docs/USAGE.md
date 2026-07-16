@@ -29,3 +29,7 @@ The GUI can terminate the active worker process. Completed images remain in the 
 - `cpu`: force CPU.
 
 The first InstanSeg run may take longer while model weights are downloaded.
+
+## Built-in classifier defaults
+
+The Tissue, Anthracosis and H-DAB threshold JSON classifiers are distributed with HistoAnalyzer. They are selected automatically. Use **Use bundled defaults** to restore them after selecting custom files. Custom classifier paths override only the corresponding bundled resource.

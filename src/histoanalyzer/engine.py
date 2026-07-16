@@ -56,6 +56,8 @@ import cv2
 import numpy as np
 import tifffile
 
+from .resources import bundled_classifier_paths
+
 try:
     import zarr  # type: ignore
 except Exception:
@@ -69,18 +71,17 @@ except Exception:
 
 
 APP_NAME = "Standalone H-DAB Nuclei Compartment Pipeline"
-APP_VERSION = "2.4.0"
-BUILD_ID = "2026-07-16-INSTANSEG-QUPATH-PARITY-C"
+APP_VERSION = "2.5.0"
+BUILD_ID = "2026-07-16-BUNDLED-CLASSIFIERS-A"
 
-DEFAULT_BASE = Path(
-    r"C:\Users\juaco\OneDrive\Escritorio\HospitalClinic\SegmentationTask\pixel_classifiers"
-)
-DEFAULT_IMAGE = DEFAULT_BASE / "ID_2041_1.tif"
-DEFAULT_TISSUE = DEFAULT_BASE / "TissueClassifierANNFullJuly06.json"
-DEFAULT_ANTHRA = DEFAULT_BASE / "AnthraJuly06.json"
-DEFAULT_DAB = DEFAULT_BASE / "DABCNNThreshold0.17DAB.json"
+_BUNDLED_CLASSIFIERS = bundled_classifier_paths()
+DEFAULT_BASE = Path.cwd()
+DEFAULT_IMAGE = DEFAULT_BASE / "image.tif"
+DEFAULT_TISSUE = _BUNDLED_CLASSIFIERS.tissue
+DEFAULT_ANTHRA = _BUNDLED_CLASSIFIERS.anthra
+DEFAULT_DAB = _BUNDLED_CLASSIFIERS.dab
 DEFAULT_COMPARTMENT_MODEL = DEFAULT_BASE / "TumorStromaRF_InstanSeg.joblib"
-DEFAULT_TRAINING_ANNOTATIONS = DEFAULT_BASE / "ID_2041_1_compartments.geojson"
+DEFAULT_TRAINING_ANNOTATIONS = DEFAULT_BASE / "image_compartments.geojson"
 
 # Spyder-friendly defaults. Running the file with no command uses this mode.
 # - "auto": predict if the model exists; otherwise train then predict if the
@@ -107,6 +108,71 @@ SUPPORTED_OPENSLIDE = (".svs", ".ndpi", ".mrxs", ".scn", ".vms", ".vmu", ".bif")
 
 def log(message: str) -> None:
     print(message, flush=True)
+
+
+def _resolve_opencv_ml_loaders() -> Tuple[Any, Any, str]:
+    """Return ANN_MLP and RTrees model loaders across OpenCV binding layouts.
+
+    Normal opencv-python wheels expose ``cv2.ml.ANN_MLP_load`` and
+    ``cv2.ml.RTrees_load``. Some frozen builds expose only the generated
+    top-level class aliases (``cv2.ml_ANN_MLP`` and ``cv2.ml_RTrees``).
+    Supporting both prevents a valid OpenCV binary from failing solely because
+    its Python namespace was flattened by a freezer.
+    """
+    ml_namespace = getattr(cv2, "ml", None)
+    ann_loader = getattr(ml_namespace, "ANN_MLP_load", None) if ml_namespace is not None else None
+    rtrees_loader = getattr(ml_namespace, "RTrees_load", None) if ml_namespace is not None else None
+    if callable(ann_loader) and callable(rtrees_loader):
+        return ann_loader, rtrees_loader, "cv2.ml"
+
+    ann_class = getattr(cv2, "ml_ANN_MLP", None)
+    rtrees_class = getattr(cv2, "ml_RTrees", None)
+    ann_loader = getattr(ann_class, "load", None) if ann_class is not None else None
+    rtrees_loader = getattr(rtrees_class, "load", None) if rtrees_class is not None else None
+    if callable(ann_loader) and callable(rtrees_loader):
+        return ann_loader, rtrees_loader, "cv2 top-level ML aliases"
+
+    raise RuntimeError(
+        "This OpenCV runtime does not provide the ML model loaders required by "
+        "HistoAnalyzer (ANN_MLP and RTrees). "
+        f"OpenCV version={getattr(cv2, '__version__', 'unknown')!r}; "
+        f"module={getattr(cv2, '__file__', 'frozen/unknown')!r}; "
+        f"has cv2.ml={ml_namespace is not None}; "
+        f"has cv2.ml_ANN_MLP={ann_class is not None}; "
+        f"has cv2.ml_RTrees={rtrees_class is not None}. "
+        "Install exactly one OpenCV wheel; HistoAnalyzer builds use "
+        "opencv-python-headless==4.10.0.84."
+    )
+
+
+def opencv_ml_diagnostics() -> Dict[str, Any]:
+    """Return a JSON-serializable OpenCV ML runtime report."""
+    report: Dict[str, Any] = {
+        "opencv_version": str(getattr(cv2, "__version__", "unknown")),
+        "opencv_module": str(getattr(cv2, "__file__", "frozen/unknown")),
+        "has_cv2_ml": hasattr(cv2, "ml"),
+        "has_ml_ann_alias": hasattr(cv2, "ml_ANN_MLP"),
+        "has_ml_rtrees_alias": hasattr(cv2, "ml_RTrees"),
+        "has_file_storage": hasattr(cv2, "FileStorage"),
+        "ok": False,
+    }
+    try:
+        _, _, mode = _resolve_opencv_ml_loaders()
+        if not report["has_file_storage"]:
+            raise RuntimeError("cv2.FileStorage is unavailable")
+        report["loader_mode"] = mode
+        report["ok"] = True
+    except Exception as exc:
+        report["error"] = str(exc)
+    return report
+
+
+def verify_opencv_ml_runtime() -> Dict[str, Any]:
+    """Validate the exact OpenCV capabilities needed by the JSON classifiers."""
+    report = opencv_ml_diagnostics()
+    if not report.get("ok"):
+        raise RuntimeError(str(report.get("error", "OpenCV ML runtime check failed")))
+    return report
 
 
 def create_unique_work_dir(parent: Path, prefix: str) -> Path:
@@ -346,8 +412,13 @@ def reconstruct_models(tissue_json: Path, anthra_json: Path) -> ReconstructedMod
     write_opencv_yaml("opencv_ml_ann_mlp", tissue_model_data, ann_path)
     write_opencv_yaml("opencv_ml_rtrees", anthra_model_data, rt_path)
 
-    tissue_ann = cv2.ml.ANN_MLP_load(str(ann_path))
-    anthra_rtrees = cv2.ml.RTrees_load(str(rt_path))
+    ann_loader, rtrees_loader, loader_mode = _resolve_opencv_ml_loaders()
+    log(
+        "OpenCV ML runtime: "
+        f"version {getattr(cv2, '__version__', 'unknown')} | loader {loader_mode}"
+    )
+    tissue_ann = ann_loader(str(ann_path))
+    anthra_rtrees = rtrees_loader(str(rt_path))
     if tissue_ann is None or tissue_ann.empty():
         tempdir.cleanup()
         raise RuntimeError("OpenCV failed to reconstruct the Tissue ANN model.")

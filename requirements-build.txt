@@ -2,3 +2,5 @@
 pyinstaller>=6.11
 setuptools>=70
 wheel>=0.44
+
+pyinstaller-hooks-contrib>=2025.1

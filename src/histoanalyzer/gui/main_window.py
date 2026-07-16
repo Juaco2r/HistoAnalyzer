@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from histoanalyzer import __version__
 from histoanalyzer.job import JobConfig, SUPPORTED_IMAGE_SUFFIXES, discover_images
+from histoanalyzer.resources import bundled_classifier_paths
 from histoanalyzer.worker import DONE_PREFIX, PROGRESS_PREFIX, RESULT_PREFIX
 
 IMAGE_FILTER = (
@@ -229,6 +230,15 @@ class MainWindow(QMainWindow):
         form.addRow("Tissue", self.tissue_picker)
         form.addRow("Anthracosis", self.anthra_picker)
         form.addRow("DAB threshold", self.dab_picker)
+        defaults_row = QHBoxLayout()
+        restore_defaults = QPushButton("Use bundled defaults")
+        restore_defaults.setToolTip("Restore the three classifiers distributed with HistoAnalyzer")
+        restore_defaults.clicked.connect(self._set_bundled_classifier_defaults)
+        defaults_note = QLabel("Included with HistoAnalyzer")
+        defaults_note.setObjectName("helpText")
+        defaults_row.addWidget(restore_defaults)
+        defaults_row.addWidget(defaults_note, 1)
+        form.addRow(defaults_row)
         layout.addWidget(classifiers)
 
         compartments = QGroupBox("Compartment model")
@@ -393,14 +403,22 @@ class MainWindow(QMainWindow):
             QProgressBar::chunk { background: #2b80c5; border-radius: 4px; }
         """)
 
+    def _set_bundled_classifier_defaults(self) -> None:
+        bundled = bundled_classifier_paths()
+        self.tissue_picker.setText(str(bundled.tissue))
+        self.anthra_picker.setText(str(bundled.anthra))
+        self.dab_picker.setText(str(bundled.dab))
+
     def _restore_settings(self) -> None:
+        bundled = bundled_classifier_paths()
         defaults = {
-            "tissue": "", "anthra": "", "dab": "", "output": "",
+            "tissue": str(bundled.tissue), "anthra": str(bundled.anthra),
+            "dab": str(bundled.dab), "output": "",
             "annotations": "", "model": "", "model_output": "",
         }
-        self.tissue_picker.setText(self.settings.value("paths/tissue", defaults["tissue"]))
-        self.anthra_picker.setText(self.settings.value("paths/anthra", defaults["anthra"]))
-        self.dab_picker.setText(self.settings.value("paths/dab", defaults["dab"]))
+        self.tissue_picker.setText(self.settings.value("paths/tissue", defaults["tissue"]) or defaults["tissue"])
+        self.anthra_picker.setText(self.settings.value("paths/anthra", defaults["anthra"]) or defaults["anthra"])
+        self.dab_picker.setText(self.settings.value("paths/dab", defaults["dab"]) or defaults["dab"])
         self.output_root.setText(self.settings.value("paths/output", defaults["output"]))
         self.annotation_folder.setText(self.settings.value("paths/annotations", defaults["annotations"]))
         self.compartment_model.setText(self.settings.value("paths/model", defaults["model"]))

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "HistoAnalyzer"
-version = "1.0.1"
+version = "1.0.4"
 description = "Cross-platform H-DAB histology analysis with QuPath classifier JSON support, InstanSeg nuclei segmentation, and Tumor/Stroma/Other quantification."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -32,7 +32,7 @@ classifiers = [
 dependencies = [
   "PySide6>=6.7,<7",
   "numpy>=1.24,<3",
-  "opencv-python>=4.9",
+  "opencv-python-headless==4.10.0.84",
   "tifffile>=2023.9",
   "zarr>=2,<3",
   "Pillow>=10",
@@ -69,7 +69,7 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-histoanalyzer = ["assets/*"]
+histoanalyzer = ["assets/*", "resources/classifiers/*.json"]
 
 [tool.ruff]
 line-length = 110

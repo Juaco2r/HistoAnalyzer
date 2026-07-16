@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+from .resources import bundled_classifier_paths
+
 SUPPORTED_IMAGE_SUFFIXES = (
     ".tif", ".tiff", ".svs", ".ndpi", ".mrxs", ".scn", ".vms", ".vmu", ".bif",
     ".png", ".jpg", ".jpeg", ".bmp",
@@ -67,7 +69,17 @@ class JobConfig:
     geojson_min_area: float = 4.0
     geojson_simplify: float = 1.0
 
+    def apply_bundled_classifier_defaults(self) -> None:
+        defaults = bundled_classifier_paths()
+        if not self.tissue_classifier:
+            self.tissue_classifier = str(defaults.tissue)
+        if not self.anthra_classifier:
+            self.anthra_classifier = str(defaults.anthra)
+        if not self.dab_classifier:
+            self.dab_classifier = str(defaults.dab)
+
     def validate(self) -> None:
+        self.apply_bundled_classifier_defaults()
         if self.mode not in {"baseline", "predict", "train", "train_predict"}:
             raise ValueError(f"Unsupported mode: {self.mode}")
         if not self.images:

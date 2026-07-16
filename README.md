@@ -1,3 +1,13 @@
+## Built-in classifiers
+
+HistoAnalyzer ships with three default QuPath JSON classifiers and selects them automatically:
+
+- Tissue ANN: `TissueClassifierANNFullJuly06.json`
+- Anthracosis/ink RTrees: `AnthraJuly06.json`
+- H-DAB threshold: `DABCNNThreshold0.17DAB.json` (DAB OD threshold 0.17)
+
+They are visible in the GUI and can be restored with **Use bundled defaults**. Selecting another JSON file overrides the corresponding built-in classifier. The standalone release uses the same defaults without requiring external classifier paths.
+
 # HistoAnalyzer
 
 ![HistoAnalyzer icon](assets/icon_512.png)
@@ -112,7 +122,8 @@ compartment_dab_overlay_50pct.png
 
 GitHub Actions builds a native application on Windows, macOS, and Linux. PyInstaller is not a cross-compiler, so each artifact is generated on its own operating system.
 
-- Windows: `HistoAnalyzer-Windows-x64.zip`
+- Windows installer (recommended): `HistoAnalyzer-Windows-x64-Setup.exe`
+- Windows portable: `HistoAnalyzer-Windows-x64-PORTABLE-EXTRACT-FIRST.zip`
 - macOS: `HistoAnalyzer-macOS.zip`
 - Linux: `HistoAnalyzer-Linux-x64.tar.gz`
 

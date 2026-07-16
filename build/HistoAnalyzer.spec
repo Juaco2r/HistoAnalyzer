@@ -26,7 +26,9 @@ print(f"HistoAnalyzer build root: {ROOT}")
 print(f"HistoAnalyzer entry point: {ENTRY}")
 
 packages = [
-    "PySide6", "numpy", "cv2", "tifffile", "zarr", "PIL", "scipy", "skimage",
+    # Let PyInstaller's dedicated OpenCV hook collect cv2. Manually collecting the cv2 package
+    # can interfere with the wheel's generated loader and optional namespaces.
+    "PySide6", "numpy", "tifffile", "zarr", "PIL", "scipy", "skimage",
     "sklearn", "joblib", "shapely", "torch", "instanseg", "einops", "fastremap",
     "matplotlib", "requests", "tqdm",
 ]
@@ -34,11 +36,13 @@ packages = [
 datas = [
     (str(ASSETS / "icon.png"), "assets"),
     (str(ASSETS / "icon.ico"), "assets"),
+    (str(SRC / "histoanalyzer" / "resources" / "classifiers"), "histoanalyzer/resources/classifiers"),
     (str(ROOT / "LICENSE"), "."),
     (str(ROOT / "THIRD_PARTY_NOTICES.md"), "."),
 ]
 binaries = []
 hiddenimports = [
+    "cv2",
     "histoanalyzer", "histoanalyzer.__main__", "histoanalyzer.worker",
     "histoanalyzer.engine", "histoanalyzer.gui.main_window",
     "sklearn.ensemble._forest", "sklearn.tree._tree", "sklearn.utils._cython_blas",
@@ -122,8 +126,8 @@ if platform.system() == "Darwin":
         info_plist={
             "CFBundleName": "HistoAnalyzer",
             "CFBundleDisplayName": "HistoAnalyzer",
-            "CFBundleShortVersionString": "1.0.1",
-            "CFBundleVersion": "1.0.1",
+            "CFBundleShortVersionString": "1.0.4",
+            "CFBundleVersion": "1.0.4",
             "NSHighResolutionCapable": True,
         },
     )
