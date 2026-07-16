@@ -2,20 +2,76 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-python scripts/validate_build_layout.py
-python -m pip install --upgrade pip
-python -m pip install -r requirements-build.txt
+function Invoke-PythonChecked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [string]$Description = "Python command"
+    )
+
+    & python @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Description failed with exit code $LASTEXITCODE."
+    }
+}
+
+Invoke-PythonChecked -Arguments @("scripts/validate_build_layout.py") -Description "Build layout validation"
+Invoke-PythonChecked -Arguments @("-m", "pip", "install", "--upgrade", "pip") -Description "pip upgrade"
+Invoke-PythonChecked -Arguments @("-m", "pip", "install", "-r", "requirements-build.txt") -Description "Build dependency installation"
 
 # All OpenCV wheels install into the same cv2 namespace. Dependencies may pull
 # in a second variant, producing an incomplete or inconsistent frozen module.
-# Remove every variant, then install exactly one known-good headless wheel.
-python -m pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless 2>$null
-python -m pip install --force-reinstall --no-deps --no-cache-dir opencv-python-headless==4.10.0.84
-python scripts/verify_opencv_ml.py
-python scripts/make_icons.py
+# Query the environment first and uninstall only variants that are actually
+# installed. This avoids pip's harmless "Skipping ... not installed" warning,
+# which PowerShell can promote to a terminating NativeCommandError when
+# $ErrorActionPreference is set to Stop.
+$OpenCVVariants = @(
+    "opencv-python",
+    "opencv-python-headless",
+    "opencv-contrib-python",
+    "opencv-contrib-python-headless"
+)
+
+$PipListJson = & python -m pip list --format=json
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not query installed Python distributions (exit code $LASTEXITCODE)."
+}
+
+try {
+    $InstalledDistributions = @($PipListJson | ConvertFrom-Json)
+}
+catch {
+    throw "Could not parse 'pip list --format=json': $($_.Exception.Message)"
+}
+
+$InstalledNames = @(
+    $InstalledDistributions |
+        ForEach-Object { [string]$_.name } |
+        Where-Object { $OpenCVVariants -contains $_.ToLowerInvariant() }
+)
+
+if ($InstalledNames.Count -gt 0) {
+    Write-Host "Removing conflicting OpenCV distributions: $($InstalledNames -join ', ')"
+    $UninstallArgs = @("-m", "pip", "uninstall", "-y") + $InstalledNames
+    Invoke-PythonChecked -Arguments $UninstallArgs -Description "OpenCV cleanup"
+}
+else {
+    Write-Host "No conflicting OpenCV distributions are installed."
+}
+
+Invoke-PythonChecked -Arguments @(
+    "-m", "pip", "install", "--force-reinstall", "--no-deps", "--no-cache-dir",
+    "opencv-python-headless==4.10.0.84"
+) -Description "Pinned OpenCV installation"
+Invoke-PythonChecked -Arguments @("scripts/verify_opencv_ml.py") -Description "OpenCV ML verification"
+Invoke-PythonChecked -Arguments @("scripts/make_icons.py") -Description "Icon generation"
 
 Remove-Item -Recurse -Force dist, build/.pyinstaller -ErrorAction SilentlyContinue
-python -m PyInstaller --noconfirm --clean --distpath dist --workpath build/.pyinstaller build/HistoAnalyzer.spec
+Invoke-PythonChecked -Arguments @(
+    "-m", "PyInstaller", "--noconfirm", "--clean",
+    "--distpath", "dist", "--workpath", "build/.pyinstaller",
+    "build/HistoAnalyzer.spec"
+) -Description "PyInstaller build"
 
 $Exe = Join-Path $Root "dist/HistoAnalyzer/HistoAnalyzer.exe"
 $PythonDll = Join-Path $Root "dist/HistoAnalyzer/_internal/python311.dll"
@@ -80,6 +136,9 @@ if (-not $iscc) {
     throw "Inno Setup 6 (ISCC.exe) was not found. Install it before building the Windows installer."
 }
 & $iscc.FullName "build/windows_installer.iss"
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup failed with exit code $LASTEXITCODE."
+}
 $Installer = Join-Path $Root "release/HistoAnalyzer-Windows-x64-Setup.exe"
 if (-not (Test-Path $Installer)) {
     throw "Windows installer was not created: $Installer"

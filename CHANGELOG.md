@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5 — 2026-07-16
+
+- Fixed Windows CI failure caused by PowerShell treating pip warnings for absent OpenCV packages as terminating errors.
+- The Windows build now queries installed distributions and uninstalls only OpenCV variants that are actually present.
+- Added explicit native-command exit-code checks around OpenCV cleanup and reinstall.
+- Added a regression test for the Windows OpenCV cleanup contract.
+
 ## 1.0.4 — 2026-07-16
 
 - Bundle the validated Tissue, Anthracosis and H-DAB threshold JSON classifiers.
