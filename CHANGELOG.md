@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.7 — 2026-07-16
+
+- Fixed the Windows job failing after a successful PyInstaller build because `docs/WINDOWS_PORTABLE_README.txt` could not be copied.
+- Added a self-generating `README_FIRST.txt` fallback to the Windows portable packaging step.
+- Added regression tests for both the documented notice and the inline fallback.
+- Kept the installer and portable archive validation unchanged.
+
 ## 1.0.6 — 2026-07-16
 
 - Fixed Windows, macOS and Linux PyInstaller failures caused by a missing `src/histoanalyzer/resources/classifiers` directory.
@@ -8,7 +15,7 @@
 - Made the PyInstaller spec fall back to the repository-level `classifiers/` directory when needed.
 - Added build validation and regression tests for classifier resource synchronization.
 
-## 1.0.6 — 2026-07-16
+## 1.0.5 — 2026-07-16
 
 - Fixed Windows CI failure caused by PowerShell treating pip warnings for absent OpenCV packages as terminating errors.
 - The Windows build now queries installed distributions and uninstalls only OpenCV variants that are actually present.

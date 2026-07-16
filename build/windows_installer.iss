@@ -1,5 +1,5 @@
 #define MyAppName "HistoAnalyzer"
-#define MyAppVersion "1.0.6"
+#define MyAppVersion "1.0.7"
 #define MyAppPublisher "José Rodríguez-Rojas"
 #define MyAppExeName "HistoAnalyzer.exe"
 

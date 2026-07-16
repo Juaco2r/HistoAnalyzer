@@ -115,7 +115,30 @@ Remove-Item -Recurse -Force $PortableStage -ErrorAction SilentlyContinue
 Remove-Item -Force $PortableZip -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $PortableStage | Out-Null
 Copy-Item -Recurse -Force "dist/HistoAnalyzer" (Join-Path $PortableStage "HistoAnalyzer")
-Copy-Item -Force "docs/WINDOWS_PORTABLE_README.txt" (Join-Path $PortableStage "README_FIRST.txt")
+$PortableReadmeSource = Join-Path $Root "docs/WINDOWS_PORTABLE_README.txt"
+$PortableReadmeDestination = Join-Path $PortableStage "README_FIRST.txt"
+if (Test-Path $PortableReadmeSource) {
+    Copy-Item -Force $PortableReadmeSource $PortableReadmeDestination
+}
+else {
+    Write-Warning "Portable README source was not found; generating README_FIRST.txt from the build script."
+    $FallbackPortableReadme = @(
+        "HistoAnalyzer portable Windows build",
+        "====================================",
+        "",
+        "IMPORTANT: Extract the complete ZIP before launching HistoAnalyzer.exe.",
+        "Do not run HistoAnalyzer.exe from inside the ZIP and do not move the EXE",
+        "away from its adjacent _internal folder.",
+        "",
+        "Recommended steps:",
+        "1. Right-click the ZIP and choose Extract All.",
+        "2. Open the extracted HistoAnalyzer folder.",
+        "3. Run HistoAnalyzer.exe.",
+        "",
+        "The installer release is recommended for most Windows users."
+    )
+    $FallbackPortableReadme | Set-Content -Path $PortableReadmeDestination -Encoding UTF8
+}
 Compress-Archive -Path "$PortableStage/*" -DestinationPath $PortableZip -CompressionLevel Optimal -Force
 Write-Host "Portable build: $PortableZip"
 

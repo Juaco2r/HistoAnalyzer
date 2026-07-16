@@ -143,8 +143,8 @@ if platform.system() == "Darwin":
         info_plist={
             "CFBundleName": "HistoAnalyzer",
             "CFBundleDisplayName": "HistoAnalyzer",
-            "CFBundleShortVersionString": "1.0.6",
-            "CFBundleVersion": "1.0.6",
+            "CFBundleShortVersionString": "1.0.7",
+            "CFBundleVersion": "1.0.7",
             "NSHighResolutionCapable": True,
         },
     )
