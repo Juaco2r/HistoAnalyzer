@@ -9,6 +9,10 @@ import traceback
 from pathlib import Path
 from typing import Iterable, List
 
+from .runtime_env import bootstrap_runtime_environment
+
+bootstrap_runtime_environment()
+
 from . import engine
 from .job import JobConfig, safe_stem
 

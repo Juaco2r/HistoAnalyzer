@@ -30,6 +30,17 @@ if not report.get("ok"):
     raise SystemExit(f"Frozen OpenCV ML self-test failed: {report}")
 print(f"Frozen OpenCV ML self-test passed using {report.get('loader_mode')}.")
 PY
+INSTANSEG_SELF_TEST="release/instanseg-runtime-self-test.json"
+"$SELF_TEST_EXE" --self-test-instanseg-runtime --self-test-output "$INSTANSEG_SELF_TEST"
+python - <<'PY'
+import json
+from pathlib import Path
+path = Path("release/instanseg-runtime-self-test.json")
+report = json.loads(path.read_text(encoding="utf-8"))
+if not report.get("ok"):
+    raise SystemExit(f"Frozen InstanSeg runtime self-test failed: {report}")
+print(f"Frozen InstanSeg runtime self-test passed. Cache: {report.get('cache')}")
+PY
 mkdir -p release
 if [[ -d dist/HistoAnalyzer.app ]]; then
   ditto -c -k --sequesterRsrc --keepParent dist/HistoAnalyzer.app release/HistoAnalyzer-macOS.zip

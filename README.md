@@ -149,3 +149,7 @@ Use `CITATION.cff` for HistoAnalyzer. If using InstanSeg brightfield nuclei segm
 ## License
 
 HistoAnalyzer source code is released under the MIT License. Third-party packages and pretrained models retain their own licenses.
+
+### InstanSeg model storage
+
+On first use, the selected public InstanSeg model is downloaded to a writable per-user cache rather than the application installation folder. On Windows the default is `%LOCALAPPDATA%\HistoAnalyzer\models\instanseg\bioimageio_models`. This prevents permission errors for installations under `C:\Program Files`.

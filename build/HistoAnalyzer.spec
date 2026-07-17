@@ -61,7 +61,7 @@ binaries = []
 hiddenimports = [
     "cv2",
     "histoanalyzer", "histoanalyzer.__main__", "histoanalyzer.worker",
-    "histoanalyzer.engine", "histoanalyzer.gui.main_window",
+    "histoanalyzer.engine", "histoanalyzer.runtime_env", "histoanalyzer.gui.main_window",
     "sklearn.ensemble._forest", "sklearn.tree._tree", "sklearn.utils._cython_blas",
     "torch._C", "torchvision", "zarr.storage", "numcodecs",
 ]
@@ -97,7 +97,7 @@ a = Analysis(
     hiddenimports=sorted(set(hiddenimports)),
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / "build" / "pyi_rth_histoanalyzer_env.py")],
     excludes=["tkinter", "pytest", "IPython", "jupyter", "notebook", "seaborn"],
     noarchive=False,
     optimize=1,
@@ -143,8 +143,8 @@ if platform.system() == "Darwin":
         info_plist={
             "CFBundleName": "HistoAnalyzer",
             "CFBundleDisplayName": "HistoAnalyzer",
-            "CFBundleShortVersionString": "1.0.8",
-            "CFBundleVersion": "1.0.8",
+            "CFBundleShortVersionString": "1.0.11",
+            "CFBundleVersion": "1.0.11",
             "NSHighResolutionCapable": True,
         },
     )

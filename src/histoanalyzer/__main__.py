@@ -7,6 +7,10 @@ import os
 import sys
 from pathlib import Path
 
+from .runtime_env import bootstrap_runtime_environment
+
+bootstrap_runtime_environment()
+
 
 def _restore_worker_streams() -> None:
     """Restore redirected QProcess pipes in PyInstaller windowed builds.
@@ -29,6 +33,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--worker", default=None)
     parser.add_argument("--self-test-opencv", action="store_true")
+    parser.add_argument("--self-test-instanseg-runtime", action="store_true")
     parser.add_argument("--self-test-output", default=None)
     known, _ = parser.parse_known_args()
     if known.self_test_opencv:
@@ -43,6 +48,35 @@ def main() -> int:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(payload + "\n", encoding="utf-8")
         return 0 if report.get("ok") else 2
+    if known.self_test_instanseg_runtime:
+        _restore_worker_streams()
+        report = {"ok": False}
+        try:
+            from .runtime_env import bootstrap_runtime_environment
+            env = bootstrap_runtime_environment()
+            from .engine import configure_instanseg_model_cache, require_instanseg
+            cache = configure_instanseg_model_cache()
+            InstanSeg = require_instanseg()
+            report.update({
+                "ok": True,
+                "path_home": str(Path.home()),
+                "cache": str(cache),
+                "runtime": env,
+                "instanseg_class": f"{InstanSeg.__module__}.{InstanSeg.__name__}",
+            })
+        except Exception as exc:
+            import traceback
+            report.update({
+                "error": str(exc),
+                "traceback": traceback.format_exc(),
+            })
+        payload = json.dumps(report, indent=2, sort_keys=True)
+        print(payload, flush=True)
+        if known.self_test_output:
+            output = Path(known.self_test_output)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(payload + "\n", encoding="utf-8")
+        return 0 if report.get("ok") else 3
     if known.worker:
         _restore_worker_streams()
         from .worker import run_job_file

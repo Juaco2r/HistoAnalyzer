@@ -105,6 +105,22 @@ if (-not $Report.ok) {
 }
 Write-Host "Frozen OpenCV ML self-test passed using $($Report.loader_mode)."
 
+$InstanSegSelfTest = Join-Path $Root "release/instanseg-runtime-self-test.json"
+$InstanSegProcess = Start-Process -FilePath $Exe -ArgumentList @(
+    "--self-test-instanseg-runtime",
+    "--self-test-output",
+    $InstanSegSelfTest
+) -Wait -PassThru
+if ($InstanSegProcess.ExitCode -ne 0) {
+    if (Test-Path $InstanSegSelfTest) { Get-Content $InstanSegSelfTest | Write-Host }
+    throw "Frozen InstanSeg runtime self-test exited with code $($InstanSegProcess.ExitCode)."
+}
+$InstanSegReport = Get-Content $InstanSegSelfTest -Raw | ConvertFrom-Json
+if (-not $InstanSegReport.ok) {
+    throw "Frozen InstanSeg runtime self-test failed: $($InstanSegReport.error)"
+}
+Write-Host "Frozen InstanSeg runtime self-test passed. Cache: $($InstanSegReport.cache)"
+
 New-Item -ItemType Directory -Force release | Out-Null
 
 # Portable release. The complete folder must be extracted before launching;

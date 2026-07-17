@@ -28,7 +28,7 @@ prediction, and H-DAB stain-2 thresholding.
 Research-use software. Validate representative regions against the original
 QuPath classifier before using results for a complete study.
 
-Version 2.6.0 stores downloaded InstanSeg models in a writable per-user cache,
+Version 2.6.1 stores downloaded InstanSeg models in a writable per-user cache,
 reports the actual backend used after fallback, and suppresses IPython-only display
 in frozen GUI builds. The public InstanSeg brightfield_nuclei model remains the
 preferred nuclei backend, with RGB input, automatic CPU/CUDA selection,
@@ -42,6 +42,7 @@ import argparse
 import csv
 import gc
 import json
+import io
 import math
 import os
 import platform
@@ -50,6 +51,8 @@ import sys
 import tempfile
 import time
 import traceback
+import uuid
+import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,8 +77,8 @@ except Exception:
 
 
 APP_NAME = "Standalone H-DAB Nuclei Compartment Pipeline"
-APP_VERSION = "2.6.0"
-BUILD_ID = "2026-07-16-INSTANSEG-USER-CACHE-A"
+APP_VERSION = "2.6.2"
+BUILD_ID = "2026-07-17-INSTANSEG-EARLY-HOME-DIRECT-DOWNLOAD-A"
 
 _BUNDLED_CLASSIFIERS = bundled_classifier_paths()
 DEFAULT_BASE = Path.cwd()
@@ -1706,48 +1709,230 @@ class NucleiBackendConfig:
         return cls(**known)
 
 
+def _nonempty_env_path(name: str) -> Optional[Path]:
+    """Return a non-empty environment path without invoking Path.home()."""
+    value = os.environ.get(name)
+    if not value or not str(value).strip():
+        return None
+    expanded = os.path.expandvars(str(value).strip().strip('"'))
+    if expanded.startswith("~"):
+        home = _runtime_home_dir()
+        expanded = str(home) + expanded[1:]
+    return Path(expanded)
+
+
+def _windows_known_folder(csidl: int) -> Optional[Path]:
+    """Resolve a Windows shell folder without relying on HOME/USERPROFILE."""
+    if platform.system().lower() != "windows":
+        return None
+    try:
+        import ctypes
+
+        buffer = ctypes.create_unicode_buffer(32768)
+        result = ctypes.windll.shell32.SHGetFolderPathW(  # type: ignore[attr-defined]
+            None, int(csidl), None, 0, buffer
+        )
+        if result == 0 and buffer.value:
+            return Path(buffer.value)
+    except Exception:
+        pass
+    return None
+
+
+def _runtime_home_dir() -> Path:
+    """Find a writable runtime home even in a frozen Windows worker.
+
+    PyInstaller workers started from an installed application can occasionally
+    lack HOME/USERPROFILE.  This resolver never calls Path.home(), thereby
+    avoiding ``RuntimeError: Could not determine home directory``.
+    """
+    system = platform.system().lower()
+    candidates: List[Optional[Path]] = []
+
+    if system == "windows":
+        candidates.extend([
+            _nonempty_env_path("USERPROFILE"),
+            _windows_known_folder(40),  # CSIDL_PROFILE
+        ])
+        local = _nonempty_env_path("LOCALAPPDATA") or _windows_known_folder(28)
+        roaming = _nonempty_env_path("APPDATA") or _windows_known_folder(26)
+        for appdata in (local, roaming):
+            if appdata is not None:
+                try:
+                    # C:\Users\name\AppData\Local|Roaming -> C:\Users\name
+                    candidates.append(appdata.parents[1])
+                except IndexError:
+                    pass
+        drive = os.environ.get("HOMEDRIVE", "")
+        path = os.environ.get("HOMEPATH", "")
+        if drive and path:
+            candidates.append(Path(drive + path))
+    else:
+        candidates.append(_nonempty_env_path("HOME"))
+
+    # tempfile is available even when account/profile environment variables are
+    # absent. It is preferable to aborting or writing under Program Files.
+    try:
+        candidates.append(Path(tempfile.gettempdir()) / "HistoAnalyzer-user")
+    except Exception:
+        pass
+    candidates.append(Path.cwd() / ".histoanalyzer-user")
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / ".histoanalyzer_home_probe"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return candidate
+        except Exception:
+            continue
+    raise RuntimeError("Could not determine a writable HistoAnalyzer user directory.")
+
+
+def _prepare_runtime_home(cache_base: Path) -> Path:
+    """Populate home/cache variables needed by InstanSeg and its dependencies."""
+    home = _runtime_home_dir()
+    if not os.environ.get("HOME"):
+        os.environ["HOME"] = str(home)
+    if platform.system().lower() == "windows":
+        if not os.environ.get("USERPROFILE"):
+            os.environ["USERPROFILE"] = str(home)
+        if not os.environ.get("LOCALAPPDATA"):
+            os.environ["LOCALAPPDATA"] = str(cache_base.parent)
+        # Some Windows expanduser implementations consult HOMEDRIVE/HOMEPATH.
+        if home.drive and not os.environ.get("HOMEDRIVE"):
+            os.environ["HOMEDRIVE"] = home.drive
+        if home.drive and not os.environ.get("HOMEPATH"):
+            os.environ["HOMEPATH"] = str(home)[len(home.drive):] or "\\"
+    else:
+        if not os.environ.get("XDG_CACHE_HOME"):
+            os.environ["XDG_CACHE_HOME"] = str(cache_base.parent)
+    if not os.environ.get("TORCH_HOME"):
+        os.environ["TORCH_HOME"] = str(cache_base / "models" / "torch")
+    return home
+
+
 def histoanalyzer_user_cache_dir() -> Path:
-    """Return a writable per-user cache directory for downloaded model files."""
-    override = os.environ.get("HISTOANALYZER_CACHE_DIR")
-    if override:
-        base = Path(override).expanduser()
+    """Return a writable cache without ever requiring Path.home()."""
+    override = _nonempty_env_path("HISTOANALYZER_CACHE_DIR")
+    if override is not None:
+        base = override
     else:
         system = platform.system().lower()
         if system == "windows":
-            base = Path(
-                os.environ.get("LOCALAPPDATA")
-                or os.environ.get("APPDATA")
-                or (Path.home() / "AppData" / "Local")
-            ) / "HistoAnalyzer"
+            local = (
+                _nonempty_env_path("LOCALAPPDATA")
+                or _windows_known_folder(28)  # CSIDL_LOCAL_APPDATA
+                or _nonempty_env_path("APPDATA")
+            )
+            if local is None:
+                try:
+                    local = Path(tempfile.gettempdir())
+                except Exception:
+                    local = _runtime_home_dir()
+            base = local / "HistoAnalyzer"
         elif system == "darwin":
-            base = Path.home() / "Library" / "Caches" / "HistoAnalyzer"
+            home = _runtime_home_dir()
+            base = home / "Library" / "Caches" / "HistoAnalyzer"
         else:
-            base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "HistoAnalyzer"
+            xdg = _nonempty_env_path("XDG_CACHE_HOME")
+            base = (xdg if xdg is not None else _runtime_home_dir() / ".cache") / "HistoAnalyzer"
     base.mkdir(parents=True, exist_ok=True)
+    _prepare_runtime_home(base)
     return base
 
 
 def configure_instanseg_model_cache() -> Path:
     """Force InstanSeg downloads into a writable user cache.
 
-    InstanSeg otherwise defaults to a directory beside its installed package.
-    That location is read-only for applications installed under Program Files.
-    An explicit INSTANSEG_BIOIMAGEIO_PATH still takes precedence.
+    This function is safe in frozen workers where HOME and USERPROFILE are
+    missing. An explicit INSTANSEG_BIOIMAGEIO_PATH still takes precedence.
     """
-    existing = os.environ.get("INSTANSEG_BIOIMAGEIO_PATH")
-    cache = Path(existing).expanduser() if existing else (
-        histoanalyzer_user_cache_dir() / "models" / "instanseg" / "bioimageio_models"
+    existing = _nonempty_env_path("INSTANSEG_BIOIMAGEIO_PATH")
+    cache_base = histoanalyzer_user_cache_dir()
+    cache = existing if existing is not None else (
+        cache_base / "models" / "instanseg" / "bioimageio_models"
     )
     cache.mkdir(parents=True, exist_ok=True)
-    # Validate writability before InstanSeg starts a potentially large download.
+    _prepare_runtime_home(cache_base)
+
     probe = cache / ".histoanalyzer_write_test"
     try:
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
     except Exception as exc:
         raise PermissionError(f"InstanSeg model cache is not writable: {cache}: {exc}") from exc
+
     os.environ["INSTANSEG_BIOIMAGEIO_PATH"] = str(cache)
     return cache
+
+INSTANSEG_PUBLIC_MODELS: Dict[str, Dict[str, str]] = {
+    "brightfield_nuclei": {
+        "version": "0.1.1",
+        "url": "https://github.com/instanseg/instanseg/releases/download/instanseg_models_v0.1.1/brightfield_nuclei.zip",
+    },
+    "fluorescence_nuclei_and_cells": {
+        "version": "0.1.1",
+        "url": "https://github.com/instanseg/instanseg/releases/download/instanseg_models_v0.1.1/fluorescence_nuclei_and_cells.zip",
+    },
+    "single_channel_nuclei": {
+        "version": "0.1.2",
+        "url": "https://github.com/instanseg/instanseg/releases/download/instanseg_models_v0.1.2/single_channel_nuclei.zip",
+    },
+}
+
+
+def ensure_instanseg_model_file(model_name: str) -> Path:
+    """Download a public InstanSeg TorchScript model without its internal downloader.
+
+    The upstream downloader is convenient in normal Python installations, but a
+    frozen desktop app should own its writable cache and download lifecycle.
+    """
+    cache = configure_instanseg_model_cache()
+    info = INSTANSEG_PUBLIC_MODELS.get(str(model_name))
+    if info is None:
+        # Permit an explicit local directory or .pt file.
+        candidate = Path(str(model_name))
+        if candidate.is_file():
+            return candidate
+        if candidate.is_dir() and (candidate / "instanseg.pt").is_file():
+            return candidate / "instanseg.pt"
+        raise ValueError(
+            f"Unknown InstanSeg model {model_name!r}. Public models: "
+            + ", ".join(sorted(INSTANSEG_PUBLIC_MODELS))
+        )
+
+    target_dir = cache / str(model_name) / info["version"]
+    target = target_dir / "instanseg.pt"
+    if target.is_file() and target.stat().st_size > 0:
+        return target
+
+    import requests  # imported only when the model is not cached
+
+    cache.mkdir(parents=True, exist_ok=True)
+    work = cache / f".{model_name}-{uuid.uuid4().hex}.download"
+    extract = work / "extract"
+    work.mkdir(parents=True, exist_ok=False)
+    try:
+        log(f"Downloading InstanSeg model '{model_name}' {info['version']} to {cache}...")
+        response = requests.get(info["url"], timeout=(30, 600))
+        response.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            archive.extractall(extract)
+        candidates = list(extract.rglob("instanseg.pt"))
+        if not candidates:
+            raise RuntimeError("The downloaded InstanSeg archive did not contain instanseg.pt")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(candidates[0], target)
+        if not target.is_file() or target.stat().st_size <= 0:
+            raise RuntimeError(f"InstanSeg model extraction failed: {target}")
+        log(f"InstanSeg model ready: {target}")
+        return target
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def require_instanseg() -> Any:
@@ -1839,6 +2024,7 @@ class NucleiSegmenter:
         self.last_raw_labels: Optional[np.ndarray] = None
         self.last_backend_used: Optional[str] = None
         self.last_fallback_reason: Optional[str] = None
+        self.last_fallback_traceback: Optional[str] = None
         self.model_cache_dir: Optional[Path] = None
 
     def _load_model(self) -> Any:
@@ -1851,8 +2037,11 @@ class NucleiSegmenter:
                 f"(device={self.config.device}, input={self.config.instanseg_input})..."
             )
             log(f"InstanSeg model cache: {self.model_cache_dir}")
+            model_file = ensure_instanseg_model_file(self.config.instanseg_model)
+            import torch  # type: ignore
+            scripted_model = torch.jit.load(str(model_file), map_location="cpu")
             self._model = InstanSeg(
-                self.config.instanseg_model,
+                scripted_model,
                 device=device,
                 image_reader="auto",
                 verbosity=1,
@@ -1997,12 +2186,14 @@ class NucleiSegmenter:
             )
             self.last_backend_used = "instanseg"
             self.last_fallback_reason = None
+            self.last_fallback_traceback = None
             return labels, props
         except Exception as exc:
             if not self.config.fallback_watershed:
                 raise
             self.last_backend_used = "watershed"
             self.last_fallback_reason = str(exc)
+            self.last_fallback_traceback = traceback.format_exc()
             if not self._warned_fallback:
                 log(f"WARNING: InstanSeg failed; using watershed fallback. Reason: {exc}")
                 self._warned_fallback = True
@@ -3047,6 +3238,11 @@ def save_nuclei_validation_tile(
         "metadata_pixel_size_um": mpp,
         "inference_pixel_size_um": float(nuclei_segmenter._effective_pixel_size(mpp)),
     }
+    if nuclei_segmenter.last_fallback_traceback:
+        (output_dir / "instanseg_failure_traceback.txt").write_text(
+            nuclei_segmenter.last_fallback_traceback, encoding="utf-8"
+        )
+
     with (output_dir / "nuclei_validation_summary.csv").open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(summary.keys()))
         writer.writeheader()

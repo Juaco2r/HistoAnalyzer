@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.11 - 2026-07-17
+
+- Configure HOME, USERPROFILE, caches and Path expansion in a PyInstaller runtime hook before third-party imports.
+- Download public InstanSeg TorchScript models directly into the HistoAnalyzer user cache.
+- Instantiate InstanSeg from the cached TorchScript module, bypassing its package-relative downloader.
+- Save `instanseg_failure_traceback.txt` whenever watershed fallback is used.
+
+## 1.0.11 - 2026-07-17
+
+- Fix InstanSeg initialization in frozen Windows workers that do not expose a usable HOME or USERPROFILE.
+- Resolve Local AppData through the Windows Shell API when environment variables are absent.
+- Fall back to a writable temporary user cache without calling `Path.home()`.
+- Initialize HOME, USERPROFILE, LOCALAPPDATA and TORCH_HOME before importing InstanSeg.
+- Add regression tests for missing and empty Windows profile variables.
+
 ## 1.0.9 - 2026-07-16
 
 - Store downloaded InstanSeg models in a writable per-user cache instead of beside the installed package.
