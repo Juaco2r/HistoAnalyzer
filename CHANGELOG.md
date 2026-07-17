@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 - 2026-07-17
+
+- Added full CleanTissue per-nucleus feature extraction in non-overlapping haloed tiles.
+- Added eight requested morphology classes plus an explicit Uncertain class.
+- Added complete class probability vectors, top-two probabilities, normalized entropy, margin uncertainty and confidence.
+- Added a stable RGB color palette and class/uncertainty overlays.
+- Added nucleus CSV, GeoJSON, palette and class summary exports.
+- Added k-nearest-neighbour GraphML and graph overlay.
+- Added probability-composition tissue regions: Tumour-rich, Stroma-rich, Immune-rich, Vascular-rich, Mixed and Low-nuclei/other.
+- Added optional joblib `predict_proba` nucleus-model support while retaining the transparent built-in morphology classifier.
+- Added GUI controls and Nucleus classes / Tissue regions result tabs.
+- Added regression tests for probabilities, uncertainty, colors, graph construction and exports.
+
 ## 1.0.11 - 2026-07-17
 
 - Configure HOME, USERPROFILE, caches and Path expansion in a PyInstaller runtime hook before third-party imports.

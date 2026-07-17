@@ -61,7 +61,8 @@ binaries = []
 hiddenimports = [
     "cv2",
     "histoanalyzer", "histoanalyzer.__main__", "histoanalyzer.worker",
-    "histoanalyzer.engine", "histoanalyzer.runtime_env", "histoanalyzer.gui.main_window",
+    "histoanalyzer.engine", "histoanalyzer.nucleus_classification",
+    "histoanalyzer.runtime_env", "histoanalyzer.gui.main_window",
     "sklearn.ensemble._forest", "sklearn.tree._tree", "sklearn.utils._cython_blas",
     "torch._C", "torchvision", "zarr.storage", "numcodecs",
 ]
@@ -143,8 +144,8 @@ if platform.system() == "Darwin":
         info_plist={
             "CFBundleName": "HistoAnalyzer",
             "CFBundleDisplayName": "HistoAnalyzer",
-            "CFBundleShortVersionString": "1.0.11",
-            "CFBundleVersion": "1.0.11",
+            "CFBundleShortVersionString": "1.1.0",
+            "CFBundleVersion": "1.1.0",
             "NSHighResolutionCapable": True,
         },
     )

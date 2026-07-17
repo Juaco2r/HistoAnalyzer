@@ -33,3 +33,9 @@ The first InstanSeg run may take longer while model weights are downloaded.
 ## Built-in classifier defaults
 
 The Tissue, Anthracosis and H-DAB threshold JSON classifiers are distributed with HistoAnalyzer. They are selected automatically. Use **Use bundled defaults** to restore them after selecting custom files. Custom classifier paths override only the corresponding bundled resource.
+
+## Nucleus classification stage
+
+The **Classify all CleanTissue nuclei** option is enabled by default. It generates a full probability vector, entropy/margin uncertainty and a color-coded nucleus overlay. The graph controls define k-nearest-neighbour edges and the physical radius used for local density and spatial morphology. Leave the optional model field empty to use the built-in transparent morphology classifier, or select a compatible joblib `predict_proba` package.
+
+See `docs/NUCLEUS_CLASSIFICATION.md` for all classes, colors and files.

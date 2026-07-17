@@ -47,6 +47,15 @@ class JobConfig:
     instanseg_min_solidity: float = 0.0
     instanseg_fallback_watershed: bool = True
 
+    # Stage 6-9: per-nucleus classification, uncertainty, graph and tissue regions.
+    enable_nucleus_classification: bool = True
+    nucleus_classifier_model: str = ""
+    nucleus_classification_tile_size: int = 1024
+    nucleus_classification_halo_px: int = 64
+    nucleus_graph_k: int = 6
+    nucleus_graph_radius_um: float = 25.0
+    nucleus_tissue_region_size_um: float = 120.0
+
     region_size_um: float = 160.0
     region_size_px: int = 320
     min_clean_fraction: float = 0.20
@@ -108,6 +117,16 @@ class JobConfig:
             raise ValueError("Pixel size must be positive.")
         if self.pixel_size_fallback_um <= 0:
             raise ValueError("Fallback pixel size must be positive.")
+        if self.nucleus_classifier_model and not Path(self.nucleus_classifier_model).exists():
+            raise FileNotFoundError(f"Nucleus classifier model: {self.nucleus_classifier_model}")
+        if self.nucleus_classification_tile_size < 256:
+            raise ValueError("Nucleus-classification tile size must be at least 256 px.")
+        if self.nucleus_classification_halo_px < 0:
+            raise ValueError("Nucleus-classification halo cannot be negative.")
+        if self.nucleus_graph_k < 1:
+            raise ValueError("Nucleus graph k must be at least 1.")
+        if self.nucleus_graph_radius_um <= 0 or self.nucleus_tissue_region_size_um <= 0:
+            raise ValueError("Nucleus graph radius and tissue-region size must be positive.")
 
     def annotation_paths_for(self, image: str) -> List[str]:
         image_key = str(Path(image).resolve())

@@ -301,6 +301,49 @@ class MainWindow(QMainWindow):
         form.addRow(self.fallback_checkbox)
         layout.addWidget(nuclei)
 
+        nucleus_classes = QGroupBox("Nucleus classification and tissue graph")
+        form = QFormLayout(nucleus_classes)
+        self.enable_nucleus_classes = QCheckBox("Classify all CleanTissue nuclei")
+        self.enable_nucleus_classes.setChecked(True)
+        self.nucleus_classifier_model = PathPicker("file", "Nucleus classifier (*.joblib)")
+        self.nucleus_classifier_model.setToolTip(
+            "Optional trained predict_proba model. Leave empty to use the built-in morphology classifier."
+        )
+        self.nucleus_class_tile = QSpinBox()
+        self.nucleus_class_tile.setRange(256, 4096)
+        self.nucleus_class_tile.setSingleStep(256)
+        self.nucleus_class_tile.setValue(1024)
+        self.nucleus_class_halo = QSpinBox()
+        self.nucleus_class_halo.setRange(0, 512)
+        self.nucleus_class_halo.setValue(64)
+        self.nucleus_graph_k = QSpinBox()
+        self.nucleus_graph_k.setRange(1, 30)
+        self.nucleus_graph_k.setValue(6)
+        self.nucleus_graph_radius = QDoubleSpinBox()
+        self.nucleus_graph_radius.setRange(5.0, 200.0)
+        self.nucleus_graph_radius.setValue(25.0)
+        self.nucleus_graph_radius.setSuffix(" µm")
+        self.nucleus_region_size = QDoubleSpinBox()
+        self.nucleus_region_size.setRange(30.0, 1000.0)
+        self.nucleus_region_size.setValue(120.0)
+        self.nucleus_region_size.setSuffix(" µm")
+        note = QLabel(
+            "Outputs include class probabilities, entropy/margin uncertainty, a color per class, "
+            "a k-nearest-neighbour graph, and Tumour/Stroma/Immune/Vascular-rich regions. "
+            "Built-in probabilities are morphology compatibility scores and require validation."
+        )
+        note.setWordWrap(True)
+        note.setObjectName("helpText")
+        form.addRow(self.enable_nucleus_classes)
+        form.addRow("Optional trained model", self.nucleus_classifier_model)
+        form.addRow("Classification tile", self.nucleus_class_tile)
+        form.addRow("Tile halo", self.nucleus_class_halo)
+        form.addRow("Graph neighbours (k)", self.nucleus_graph_k)
+        form.addRow("Graph radius", self.nucleus_graph_radius)
+        form.addRow("Tissue-region window", self.nucleus_region_size)
+        form.addRow(note)
+        layout.addWidget(nucleus_classes)
+
         basic = QGroupBox("Processing")
         form = QFormLayout(basic)
         self.ink_dilation = QSpinBox()
@@ -360,6 +403,8 @@ class MainWindow(QMainWindow):
         self.result_tabs = QTabWidget()
         self.stage_preview = ImagePreview("Pipeline stages")
         self.nuclei_preview = ImagePreview("Nuclei segmentation")
+        self.nucleus_class_preview = ImagePreview("Nucleus classes and uncertainty")
+        self.tissue_region_preview = ImagePreview("Graph-derived tissue regions")
         self.compartment_preview = ImagePreview("Tumor / Stroma / Other")
         self.dab_preview = ImagePreview("Compartment-specific DAB")
         self.log_view = QTextEdit()
@@ -367,6 +412,8 @@ class MainWindow(QMainWindow):
         self.log_view.setLineWrapMode(QTextEdit.NoWrap)
         self.result_tabs.addTab(self.stage_preview, "Stages")
         self.result_tabs.addTab(self.nuclei_preview, "Nuclei")
+        self.result_tabs.addTab(self.nucleus_class_preview, "Nucleus classes")
+        self.result_tabs.addTab(self.tissue_region_preview, "Tissue regions")
         self.result_tabs.addTab(self.compartment_preview, "Compartments")
         self.result_tabs.addTab(self.dab_preview, "DAB")
         self.result_tabs.addTab(self.log_view, "Log")
@@ -423,6 +470,7 @@ class MainWindow(QMainWindow):
         self.annotation_folder.setText(self.settings.value("paths/annotations", defaults["annotations"]))
         self.compartment_model.setText(self.settings.value("paths/model", defaults["model"]))
         self.model_output.setText(self.settings.value("paths/model_output", defaults["model_output"]))
+        self.nucleus_classifier_model.setText(self.settings.value("paths/nucleus_model", "") or "")
         self._update_mode_ui()
 
     def _save_settings(self) -> None:
@@ -433,6 +481,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("paths/annotations", self.annotation_folder.text())
         self.settings.setValue("paths/model", self.compartment_model.text())
         self.settings.setValue("paths/model_output", self.model_output.text())
+        self.settings.setValue("paths/nucleus_model", self.nucleus_classifier_model.text())
 
     def _refresh_annotation_cells(self) -> None:
         for row in range(self.image_table.rowCount()):
@@ -558,7 +607,15 @@ class MainWindow(QMainWindow):
             instanseg_device=self.device_combo.currentText().strip(), instanseg_tile_size=self.instanseg_tile.value(),
             instanseg_batch_size=self.batch_size.value(), pixel_size_um=override,
             pixel_size_fallback_um=self.pixel_fallback.value(), instanseg_min_area_px=self.min_area.value(),
-            instanseg_fallback_watershed=self.fallback_checkbox.isChecked(), region_size_um=self.region_size.value(),
+            instanseg_fallback_watershed=self.fallback_checkbox.isChecked(),
+            enable_nucleus_classification=self.enable_nucleus_classes.isChecked(),
+            nucleus_classifier_model=self.nucleus_classifier_model.text(),
+            nucleus_classification_tile_size=self.nucleus_class_tile.value(),
+            nucleus_classification_halo_px=self.nucleus_class_halo.value(),
+            nucleus_graph_k=self.nucleus_graph_k.value(),
+            nucleus_graph_radius_um=self.nucleus_graph_radius.value(),
+            nucleus_tissue_region_size_um=self.nucleus_region_size.value(),
+            region_size_um=self.region_size.value(),
             min_compartment_confidence=self.min_confidence.value(), rf_trees=self.rf_trees.value(),
             min_training_regions_per_class=self.min_regions.value(),
         )
@@ -674,13 +731,22 @@ class MainWindow(QMainWindow):
     def _load_previews(self, output: Path) -> None:
         stage_candidates = [output / "compartment_pipeline_stages_50pct.png", output / "pipeline_stages_50pct.png"]
         nuclei_candidates = [output / "nuclei_validation_montage.png", output / "nuclei_validation_raw_model_overlay.png", output / "nuclei_validation_overlay.png"]
+        class_candidates = [output / "nuclei_class_overlay.png", output / "nuclei_class_uncertainty_overlay.png", output / "nuclei_class_legend.png"]
+        region_candidates = [output / "tissue_region_overlay.png", output / "nuclei_graph_overlay.png"]
         comp_candidates = [output / "compartment_overlay_50pct.png"]
         dab_candidates = [output / "compartment_dab_overlay_50pct.png", output / "pipeline_overlay_50pct.png"]
         self.stage_preview.set_image(next((p for p in stage_candidates if p.exists()), stage_candidates[0]))
         self.nuclei_preview.set_image(next((p for p in nuclei_candidates if p.exists()), nuclei_candidates[0]))
+        self.nucleus_class_preview.set_image(next((p for p in class_candidates if p.exists()), class_candidates[0]))
+        self.tissue_region_preview.set_image(next((p for p in region_candidates if p.exists()), region_candidates[0]))
         self.compartment_preview.set_image(next((p for p in comp_candidates if p.exists()), comp_candidates[0]))
         self.dab_preview.set_image(next((p for p in dab_candidates if p.exists()), dab_candidates[0]))
-        self.result_tabs.setCurrentWidget(self.nuclei_preview if any(p.exists() for p in nuclei_candidates) else self.stage_preview)
+        if any(p.exists() for p in class_candidates):
+            self.result_tabs.setCurrentWidget(self.nucleus_class_preview)
+        elif any(p.exists() for p in nuclei_candidates):
+            self.result_tabs.setCurrentWidget(self.nuclei_preview)
+        else:
+            self.result_tabs.setCurrentWidget(self.stage_preview)
 
     def _process_finished(self, exit_code: int, _status) -> None:
         if self._stdout_buffer.strip():

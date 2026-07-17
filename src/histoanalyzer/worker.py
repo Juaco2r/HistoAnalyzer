@@ -70,6 +70,21 @@ def nuclei_cli(config: JobConfig) -> List[str]:
     return args
 
 
+def nucleus_classification_cli(config: JobConfig) -> List[str]:
+    args = [
+        "--nucleus-classification-tile-size", str(config.nucleus_classification_tile_size),
+        "--nucleus-classification-halo-px", str(config.nucleus_classification_halo_px),
+        "--nucleus-graph-k", str(config.nucleus_graph_k),
+        "--nucleus-graph-radius-um", str(config.nucleus_graph_radius_um),
+        "--nucleus-tissue-region-size-um", str(config.nucleus_tissue_region_size_um),
+    ]
+    if config.nucleus_classifier_model:
+        args += ["--nucleus-classifier-model", config.nucleus_classifier_model]
+    if not config.enable_nucleus_classification:
+        args.append("--no-nucleus-classification")
+    return args
+
+
 def compartment_cli(config: JobConfig) -> List[str]:
     return [
         "--region-size-um", str(config.region_size_um),
@@ -138,13 +153,17 @@ def run_job(config: JobConfig) -> int:
             "image": image, "message": f"Starting {Path(image).name}"
         })
         if phase == "baseline":
-            argv = ["baseline", *common_cli(config, image, str(output)), *nuclei_cli(config)]
+            argv = [
+                "baseline", *common_cli(config, image, str(output)),
+                *nuclei_cli(config), *nucleus_classification_cli(config),
+            ]
             args = parser.parse_args(argv)
             result = engine.run_pipeline(args)
         else:
             argv = [
                 "predict", *common_cli(config, image, str(output)),
                 *compartment_cli(config), *nuclei_cli(config),
+                *nucleus_classification_cli(config),
                 "--compartment-model", config.compartment_model,
             ]
             args = parser.parse_args(argv)

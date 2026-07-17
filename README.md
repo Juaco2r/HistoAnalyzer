@@ -153,3 +153,9 @@ HistoAnalyzer source code is released under the MIT License. Third-party package
 ### InstanSeg model storage
 
 On first use, the selected public InstanSeg model is downloaded to a writable per-user cache rather than the application installation folder. On Windows the default is `%LOCALAPPDATA%\HistoAnalyzer\models\instanseg\bioimageio_models`. This prevents permission errors for installations under `C:\Program Files`.
+
+## Nucleus classes, uncertainty and tissue graph
+
+Version 1.1.0 classifies every retained CleanTissue nucleus into Small lymphocyte, Plasma cell, Neutrophil, Macrophage, Fibroblast/myofibroblast, Endothelial cell, Normal pneumocyte/bronchial epithelial cell, Tumour epithelial cell or Uncertain. It exports a full probability vector, entropy and margin uncertainty, and color-coded overlays. A k-nearest-neighbour graph is then summarized into Tumour-rich, Stroma-rich, Immune-rich, Vascular-rich, Mixed and Low-nuclei/other regions.
+
+The built-in probabilities are transparent morphology compatibility values based on size, hematoxylin appearance, geometry and local spatial clues. They require validation and are not clinically calibrated. See [docs/NUCLEUS_CLASSIFICATION.md](docs/NUCLEUS_CLASSIFICATION.md).

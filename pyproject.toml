@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "HistoAnalyzer"
-version = "1.0.11"
-description = "Cross-platform H-DAB histology analysis with QuPath classifier JSON support, InstanSeg nuclei segmentation, and Tumor/Stroma/Other quantification."
+version = "1.1.0"
+description = "Cross-platform H-DAB histology analysis with QuPath classifiers, InstanSeg, per-nucleus probabilities and uncertainty, spatial graphs, and tissue-region inference."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = {file = "LICENSE"}

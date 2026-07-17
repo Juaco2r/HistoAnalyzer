@@ -28,7 +28,7 @@ prediction, and H-DAB stain-2 thresholding.
 Research-use software. Validate representative regions against the original
 QuPath classifier before using results for a complete study.
 
-Version 2.6.1 stores downloaded InstanSeg models in a writable per-user cache,
+Version 2.7.0 adds full-slide nucleus morphology classification, probabilities, uncertainty, class colors, a spatial graph and graph-derived tissue regions. It also stores downloaded InstanSeg models in a writable per-user cache,
 reports the actual backend used after fallback, and suppresses IPython-only display
 in frozen GUI builds. The public InstanSeg brightfield_nuclei model remains the
 preferred nuclei backend, with RGB input, automatic CPU/CUDA selection,
@@ -77,8 +77,8 @@ except Exception:
 
 
 APP_NAME = "Standalone H-DAB Nuclei Compartment Pipeline"
-APP_VERSION = "2.6.2"
-BUILD_ID = "2026-07-17-INSTANSEG-EARLY-HOME-DIRECT-DOWNLOAD-A"
+APP_VERSION = "2.7.0"
+BUILD_ID = "2026-07-17-NUCLEUS-CLASSIFICATION-GRAPH-A"
 
 _BUNDLED_CLASSIFIERS = bundled_classifier_paths()
 DEFAULT_BASE = Path.cwd()
@@ -1427,11 +1427,10 @@ def run_pipeline(args: argparse.Namespace) -> Path:
                 save_previews(source, workspace, output_dir, int(args.preview_max_side), alpha=0.5)
 
                 nuclei_preview_summary: Dict[str, Any] = {"saved": False, "reason": "Skipped"}
-                if not bool(getattr(args, "skip_nuclei_preview", False)):
-                    log(
-                        f"Stage 5 preview: {getattr(args, 'nuclei_backend', DEFAULT_NUCLEI_BACKEND)} "
-                        f"nuclei segmentation ({getattr(args, 'instanseg_input', DEFAULT_INSTANSEG_INPUT)} input)..."
-                    )
+                nucleus_classification_summary: Dict[str, Any] = {"saved": False, "reason": "Disabled"}
+                run_preview = not bool(getattr(args, "skip_nuclei_preview", False))
+                run_classification = bool(getattr(args, "enable_nucleus_classification", True))
+                if run_preview or run_classification:
                     backend_config = NucleiBackendConfig(
                         backend=str(getattr(args, "nuclei_backend", DEFAULT_NUCLEI_BACKEND)),
                         instanseg_model=str(getattr(args, "instanseg_model", DEFAULT_INSTANSEG_MODEL)),
@@ -1443,28 +1442,55 @@ def run_pipeline(args: argparse.Namespace) -> Path:
                         pixel_size_fallback_um=float(getattr(args, "pixel_size_fallback_um", DEFAULT_PIXEL_SIZE_FALLBACK_UM)),
                         small_max_side=int(getattr(args, "instanseg_small_max_side", 1500)),
                         fallback_watershed=bool(getattr(args, "instanseg_fallback_watershed", True)),
+                        instanseg_min_area_px=int(getattr(args, "instanseg_min_area_px", 1)),
+                        instanseg_max_area_px=int(getattr(args, "instanseg_max_area_px", 100000)),
+                        instanseg_min_solidity=float(getattr(args, "instanseg_min_solidity", 0.0)),
                     )
                     nuclei_segmenter = NucleiSegmenter(backend_config)
                     try:
-                        nuclei_preview_summary = save_nuclei_validation_tile(
-                            source=source,
-                            clean_mask=workspace.masks["clean_tissue"],
-                            stain_classifier=dab_classifier,
-                            nuclei_segmenter=nuclei_segmenter,
-                            config=CompartmentConfig(),
-                            output_dir=output_dir,
-                            tile_side=int(getattr(args, "nuclei_preview_size", 2048)),
-                        )
-                        if nuclei_preview_summary.get("saved"):
+                        if run_preview:
                             log(
-                                f"  Nuclei preview saved: {nuclei_preview_summary.get('nuclei_count', 0)} "
-                                f"instances using {nuclei_preview_summary.get('backend', backend_config.backend)}."
+                                f"Stage 5 preview: {backend_config.backend} nuclei segmentation "
+                                f"({backend_config.instanseg_input} input)..."
                             )
-                        else:
-                            log(f"  Nuclei preview was not saved: {nuclei_preview_summary.get('reason', 'unknown reason')}")
-                    except Exception as exc:
-                        nuclei_preview_summary = {"saved": False, "reason": str(exc)}
-                        log(f"WARNING: Nuclei preview failed, but baseline outputs are complete. Reason: {exc}")
+                            try:
+                                nuclei_preview_summary = save_nuclei_validation_tile(
+                                    source=source,
+                                    clean_mask=workspace.masks["clean_tissue"],
+                                    stain_classifier=dab_classifier,
+                                    nuclei_segmenter=nuclei_segmenter,
+                                    config=CompartmentConfig(),
+                                    output_dir=output_dir,
+                                    tile_side=int(getattr(args, "nuclei_preview_size", 2048)),
+                                )
+                                if nuclei_preview_summary.get("saved"):
+                                    log(
+                                        f"  Nuclei preview saved: {nuclei_preview_summary.get('nuclei_count', 0)} "
+                                        f"instances using {nuclei_preview_summary.get('backend', backend_config.backend)}."
+                                    )
+                                else:
+                                    log(f"  Nuclei preview was not saved: {nuclei_preview_summary.get('reason', 'unknown reason')}")
+                            except Exception as exc:
+                                nuclei_preview_summary = {"saved": False, "reason": str(exc)}
+                                log(f"WARNING: Nuclei preview failed, but baseline outputs are complete. Reason: {exc}")
+                        if run_classification:
+                            log("Stage 6: full CleanTissue nucleus feature extraction and classification...")
+                            try:
+                                nucleus_classification_summary = run_nucleus_classification_stage(
+                                    source=source,
+                                    clean_mask=workspace.masks["clean_tissue"],
+                                    stain_classifier=dab_classifier,
+                                    nuclei_segmenter=nuclei_segmenter,
+                                    config=CompartmentConfig(),
+                                    output_dir=output_dir,
+                                    args=args,
+                                )
+                            except Exception as exc:
+                                nucleus_classification_summary = {"saved": False, "reason": str(exc)}
+                                (output_dir / "nucleus_classification_failure_traceback.txt").write_text(
+                                    traceback.format_exc(), encoding="utf-8"
+                                )
+                                log(f"WARNING: Nucleus classification failed; earlier pipeline stages remain complete. Reason: {exc}")
                     finally:
                         nuclei_segmenter.close()
 
@@ -1510,6 +1536,7 @@ def run_pipeline(args: argparse.Namespace) -> Path:
                     "measurements": measurements,
                     "geojson_feature_counts": geojson_counts,
                     "nuclei_validation_preview": nuclei_preview_summary,
+                    "nucleus_classification": nucleus_classification_summary,
                     "notes": [
                         "Classifier resolution is 1 px/pixel for all supplied models.",
                         "Gaussian feature tiles use an image halo to minimize tile-boundary artifacts.",
@@ -1528,6 +1555,8 @@ def run_pipeline(args: argparse.Namespace) -> Path:
                         [
                             output_dir / "pipeline_stages_50pct.png",
                             output_dir / "nuclei_validation_montage.png",
+                            output_dir / "nuclei_class_overlay.png",
+                            output_dir / "tissue_region_overlay.png",
                         ]
                     )
             finally:
@@ -3250,6 +3279,156 @@ def save_nuclei_validation_tile(
     return summary
 
 
+
+def run_nucleus_classification_stage(
+    source: ImageSource,
+    clean_mask: np.memmap,
+    stain_classifier: DABThresholdClassifier,
+    nuclei_segmenter: NucleiSegmenter,
+    config: CompartmentConfig,
+    output_dir: Path,
+    args: argparse.Namespace,
+) -> Dict[str, Any]:
+    """Segment/classify all CleanTissue nuclei and infer graph-derived regions.
+
+    Nuclei are segmented in haloed tiles and retained only when their centroid
+    lies in the non-overlapping tile core. This prevents duplicated nuclei at
+    tile boundaries while retaining the contextual pixels required by
+    InstanSeg. The built-in classifier is morphology-assisted and transparent;
+    an optional joblib ``predict_proba`` model can replace it.
+    """
+    require_compartment_dependencies()
+    from .nucleus_classification import (
+        classify_records,
+        compute_spatial_features,
+        extract_records_from_tile,
+        infer_tissue_regions,
+        write_all_outputs,
+    )
+
+    tile_size = max(256, int(getattr(args, "nucleus_classification_tile_size", 1024)))
+    halo = max(0, int(getattr(args, "nucleus_classification_halo_px", 64)))
+    graph_k = max(1, int(getattr(args, "nucleus_graph_k", 6)))
+    graph_radius_um = max(1.0, float(getattr(args, "nucleus_graph_radius_um", 25.0)))
+    tissue_region_um = max(10.0, float(getattr(args, "nucleus_tissue_region_size_um", 120.0)))
+    model_path = str(getattr(args, "nucleus_classifier_model", "") or "")
+
+    metadata_mpp = _mean_mpp(source)
+    # Respect an explicit --pixel-size-um override before image metadata.
+    pixel_size_um = float(nuclei_segmenter._effective_pixel_size(metadata_mpp))
+    if metadata_mpp is None and nuclei_segmenter.config.pixel_size_um is None:
+        log(
+            f"Stage 6 quantitative morphology uses fallback {pixel_size_um:.4f} um/px. "
+            "Set the true pixel size for reliable nuclear dimensions."
+        )
+
+    if pixel_size_um > 0:
+        min_area_px = max(1, int(round(config.min_nucleus_area_um2 / (pixel_size_um * pixel_size_um))))
+        max_area_px = max(min_area_px + 1, int(round(config.max_nucleus_area_um2 / (pixel_size_um * pixel_size_um))))
+        min_distance_px = max(1, int(round(config.nucleus_min_distance_um / pixel_size_um)))
+    else:  # defensive fallback; pixel_size_um is always positive above
+        min_area_px = max(1, int(config.min_nucleus_area_px))
+        max_area_px = max(min_area_px + 1, int(config.max_nucleus_area_px))
+        min_distance_px = max(1, int(config.nucleus_min_distance_px))
+
+    records: List[Dict[str, Any]] = []
+    backend_counts: Dict[str, int] = {}
+    tiles = list(iter_tiles(source.width, source.height, tile_size))
+    processed_tiles = 0
+    next_id = 0
+    for tile_id, (x, y, w, h) in enumerate(tiles, 1):
+        rx0 = max(0, x - halo)
+        ry0 = max(0, y - halo)
+        rx1 = min(source.width, x + w + halo)
+        ry1 = min(source.height, y + h + halo)
+        valid = np.asarray(clean_mask[ry0:ry1, rx0:rx1]) > 0
+        if valid.size == 0 or not np.any(valid):
+            continue
+        rgb = source.read_region(rx0, ry0, rx1 - rx0, ry1 - ry0)
+        hh = min(rgb.shape[0], valid.shape[0])
+        ww = min(rgb.shape[1], valid.shape[1])
+        rgb = rgb[:hh, :ww]
+        valid = valid[:hh, :ww]
+        h_channel = _hematoxylin_values(stain_classifier, rgb)
+        values = h_channel[valid & np.isfinite(h_channel)]
+        if config.nucleus_h_threshold > 0:
+            threshold = float(config.nucleus_h_threshold)
+        elif values.size >= 100:
+            threshold = float(np.clip(threshold_otsu(values), 0.06, 0.45))
+        else:
+            threshold = 0.10
+        labels, props = nuclei_segmenter.segment(
+            rgb,
+            h_channel,
+            valid,
+            threshold,
+            min_area_px,
+            max_area_px,
+            min_distance_px,
+            metadata_mpp,
+        )
+        backend = nuclei_segmenter.last_backend_used or nuclei_segmenter.config.backend
+        backend_counts[backend] = backend_counts.get(backend, 0) + 1
+        core_bounds = (x - rx0, y - ry0, x - rx0 + w, y - ry0 + h)
+        tile_records = extract_records_from_tile(
+            labels=labels,
+            props=props,
+            h_channel=h_channel,
+            rgb=rgb,
+            origin_x=rx0,
+            origin_y=ry0,
+            core_bounds_local=core_bounds,
+            pixel_size_um=pixel_size_um,
+            start_id=next_id,
+            tile_id=tile_id,
+        )
+        if tile_records:
+            next_id = int(tile_records[-1]["nucleus_id"])
+            records.extend(tile_records)
+        processed_tiles += 1
+        if processed_tiles == 1 or processed_tiles % 10 == 0 or tile_id == len(tiles):
+            log(
+                f"  Nucleus classification tiles: {tile_id}/{len(tiles)} | "
+                f"retained nuclei: {len(records):,}"
+            )
+
+    log(f"Stage 7: classifying {len(records):,} nuclei with probabilities and uncertainty...")
+    edges = compute_spatial_features(records, graph_k=graph_k, radius_um=graph_radius_um)
+    model_info = classify_records(records, model_path=model_path or None)
+    log(f"Stage 8: nucleus graph contains {len(records):,} nodes and {len(edges):,} edges...")
+    regions, region_size_px = infer_tissue_regions(
+        records,
+        width_px=source.width,
+        height_px=source.height,
+        pixel_size_um=pixel_size_um,
+        region_size_um=tissue_region_um,
+    )
+    log(f"Stage 9: inferred {len(regions):,} graph-derived tissue regions...")
+    thumbnail = source.thumbnail(int(getattr(args, "preview_max_side", 2500)))
+    summary = write_all_outputs(
+        output_dir=output_dir,
+        records=records,
+        edges=edges,
+        regions=regions,
+        thumbnail_rgb=thumbnail,
+        image_width=source.width,
+        image_height=source.height,
+        image_path=str(source.path),
+        model_info=model_info,
+        region_size_px=region_size_px,
+        pixel_size_um=pixel_size_um,
+        backend_counts=backend_counts,
+    )
+    if nuclei_segmenter.last_fallback_traceback:
+        (output_dir / "instanseg_failure_traceback.txt").write_text(
+            nuclei_segmenter.last_fallback_traceback, encoding="utf-8"
+        )
+    log("  Nucleus class overlay: nuclei_class_overlay.png")
+    log("  Uncertainty overlay: nuclei_class_uncertainty_overlay.png")
+    log("  Graph-derived regions: tissue_region_overlay.png")
+    return summary
+
+
 def display_saved_images_inline(paths: Sequence[Path]) -> None:
     """Display saved PNGs only in an interactive IPython/Spyder session."""
     if Image is None or getattr(sys, "frozen", False):
@@ -3398,7 +3577,26 @@ def run_compartment_prediction(args: argparse.Namespace) -> Path:
                     nuclei_segmenter, config, output_dir,
                     tile_side=min(2048, max(512, int(args.preview_max_side))),
                 )
-                log(f"Stage 5: DAB threshold {dab_classifier.threshold} inside Tumor and Stroma...")
+                nucleus_classification_summary: Dict[str, Any] = {"saved": False, "reason": "Disabled"}
+                if bool(getattr(args, "enable_nucleus_classification", True)):
+                    log("Stage 6: full CleanTissue nucleus classification and graph-derived tissue regions...")
+                    try:
+                        nucleus_classification_summary = run_nucleus_classification_stage(
+                            source=source,
+                            clean_mask=base_ws.masks["clean_tissue"],
+                            stain_classifier=dab_classifier,
+                            nuclei_segmenter=nuclei_segmenter,
+                            config=config,
+                            output_dir=output_dir,
+                            args=args,
+                        )
+                    except Exception as exc:
+                        nucleus_classification_summary = {"saved": False, "reason": str(exc)}
+                        (output_dir / "nucleus_classification_failure_traceback.txt").write_text(
+                            traceback.format_exc(), encoding="utf-8"
+                        )
+                        log(f"WARNING: Nucleus classification failed; compartment outputs will continue. Reason: {exc}")
+                log(f"Stage 10: DAB threshold {dab_classifier.threshold} inside Tumor and Stroma...")
                 compartment_dab_pass(source, dab_classifier, comp_ws, tile_size)
                 measurements = compute_compartment_measurements(
                     image_path,
@@ -3434,6 +3632,7 @@ def run_compartment_prediction(args: argparse.Namespace) -> Path:
                     "nuclei_backend": nuclei_backend.to_dict(),
                     "region_info": region_info,
                     "nuclei_validation": nuclei_validation,
+                    "nucleus_classification": nucleus_classification_summary,
                     "measurements": measurements,
                     "geojson_feature_counts": geo_counts,
                     "notes": [
@@ -3590,6 +3789,23 @@ def add_common_image_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_nucleus_classification_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-nucleus-classification", dest="enable_nucleus_classification",
+        action="store_false", default=True,
+        help="Skip per-nucleus class probabilities, uncertainty, graph and tissue-region outputs."
+    )
+    parser.add_argument(
+        "--nucleus-classifier-model", default="",
+        help="Optional joblib model package with predict_proba; empty uses the built-in morphology classifier."
+    )
+    parser.add_argument("--nucleus-classification-tile-size", type=int, default=1024)
+    parser.add_argument("--nucleus-classification-halo-px", type=int, default=64)
+    parser.add_argument("--nucleus-graph-k", type=int, default=6)
+    parser.add_argument("--nucleus-graph-radius-um", type=float, default=25.0)
+    parser.add_argument("--nucleus-tissue-region-size-um", type=float, default=120.0)
+
+
 def add_compartment_feature_arguments(parser: argparse.ArgumentParser, defaults_none: bool = False) -> None:
     def d(value: Any) -> Any:
         return None if defaults_none else value
@@ -3621,6 +3837,7 @@ def build_extended_parser() -> argparse.ArgumentParser:
     )
     add_common_image_arguments(baseline)
     add_nuclei_backend_arguments(baseline, defaults_none=False)
+    add_nucleus_classification_arguments(baseline)
 
     train = sub.add_parser("train", help="Train Tumor/Stroma/Other Random Forest from GeoJSON annotations")
     add_common_image_arguments(train)
@@ -3637,6 +3854,7 @@ def build_extended_parser() -> argparse.ArgumentParser:
     add_common_image_arguments(predict)
     add_compartment_feature_arguments(predict, defaults_none=True)
     add_nuclei_backend_arguments(predict, defaults_none=True)
+    add_nucleus_classification_arguments(predict)
     predict.add_argument("--compartment-model", default=str(DEFAULT_COMPARTMENT_MODEL), help="Trained .joblib model")
 
     return parser

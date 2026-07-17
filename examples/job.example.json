@@ -1,6 +1,8 @@
 {
   "mode": "baseline",
-  "images": ["/path/to/example.tif"],
+  "images": [
+    "/path/to/example.tif"
+  ],
   "output_root": "/path/to/HistoAnalyzer_results",
   "tissue_classifier": "/path/to/TissueClassifier.json",
   "anthra_classifier": "/path/to/AnthracosisClassifier.json",
@@ -10,5 +12,12 @@
   "instanseg_model": "brightfield_nuclei",
   "instanseg_input": "rgb",
   "instanseg_device": "auto",
-  "pixel_size_fallback_um": 0.5
+  "pixel_size_fallback_um": 0.5,
+  "enable_nucleus_classification": true,
+  "nucleus_classifier_model": "",
+  "nucleus_classification_tile_size": 1024,
+  "nucleus_classification_halo_px": 64,
+  "nucleus_graph_k": 6,
+  "nucleus_graph_radius_um": 25.0,
+  "nucleus_tissue_region_size_um": 120.0
 }
